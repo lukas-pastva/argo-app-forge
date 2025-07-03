@@ -2,6 +2,9 @@
     ───────────────────────────────────────────────────────────────
     Clone → filter selected Applications → optional token-replace
     → stream back a ZIP.
+
+    v2 – fixes “Unexpected reserved word” (illegal await inside
+    sync callback) and cleans up async icon extraction logic.
 */
 
 import fs       from "fs/promises";
@@ -30,29 +33,26 @@ async function chartIcon(root, app) {
       await fs.readFile(path.join(chartDir, "Chart.yaml"), "utf8")
     ) || {};
     let iconRef = chartYaml.icon || "";
+
     /* remote URL? just return it */
     if (/^https?:\/\//.test(iconRef)) return iconRef;
 
     /* local file? */
     if (!iconRef) {
-      /* common fallbacks */
       for (const f of ["icon.png", "icon.jpg", "icon.svg", "logo.png"]) {
-        try {
-          await fs.access(path.join(chartDir, f));
-          iconRef = f;
-          break;
-        } catch { /* empty */ }
+        try { await fs.access(path.join(chartDir, f)); iconRef = f; break; }
+        catch { /* ignore */ }
       }
     }
     if (!iconRef) return null;
 
-    const abs = path.join(chartDir, iconRef);
-    const buf = await fs.readFile(abs);
-    const ext = path.extname(iconRef).toLowerCase();
+    const abs  = path.join(chartDir, iconRef);
+    const buf  = await fs.readFile(abs);
+    const ext  = path.extname(iconRef).toLowerCase();
     const mime =
-      ext === ".svg"  ? "image/svg+xml" :
+      ext === ".svg"               ? "image/svg+xml" :
       ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
-      ".png";
+      "image/png";
     return `data:${mime};base64,${buf.toString("base64")}`;
   } catch {
     return null;
@@ -63,24 +63,33 @@ async function chartIcon(root, app) {
    1) Flatten Applications and attach icons
    ───────────────────────────────────────────────────────────── */
 export async function listApps() {
-  const root   = await ensureRepo();
-  const files  = await findAppFiles(root);
-  const out    = [];
+  const root  = await ensureRepo();
+  const files = await findAppFiles(root);
+
+  /* gather promises for icon extraction ----------------------- */
+  const promises = [];
 
   for (const file of files) {
     const doc = yaml.load(await fs.readFile(file, "utf8")) || {};
-    (doc.appProjects || []).forEach((proj) =>
-      (proj.applications || []).forEach((app) =>
-        out.push({
-          name : app.name,
-          icon : await chartIcon(root, app)        // may be null
-        })
-      )
-    );
+    (doc.appProjects || []).forEach((proj) => {
+      (proj.applications || []).forEach((app) => {
+        promises.push(
+          (async () => ({
+            name: app.name,
+            icon: await chartIcon(root, app)    // may be null
+          }))()
+        );
+      });
+    });
   }
-  /* de-dupe by name (icon from first hit wins) */
+
+  const results = await Promise.all(promises);
+
+  /* de-dupe by name (icon from first hit wins) ---------------- */
   const seen = new Map();
-  for (const { name, icon } of out) if (!seen.has(name)) seen.set(name, icon);
+  for (const { name, icon } of results) {
+    if (!seen.has(name)) seen.set(name, icon);
+  }
   return [...seen.entries()].map(([name, icon]) => ({ name, icon }));
 }
 
