@@ -3,8 +3,8 @@
     Clone → filter selected Applications → optional token-replace
     → stream back a ZIP.
 
-    v2 – fixes “Unexpected reserved word” (illegal await inside
-    sync callback) and cleans up async icon extraction logic.
+    v3 – adds top-level directory named after the “Name” input
+    and keeps the earlier async-safe icon extraction fix.
 */
 
 import fs       from "fs/promises";
@@ -26,7 +26,7 @@ async function findAppFiles(root) {
 
 /* helper – best-effort icon extractor (repo charts only) */
 async function chartIcon(root, app) {
-  if (!app.path) return null;                         // remote chart
+  if (!app.path) return null;                       // remote chart
   const chartDir = path.join(root, app.path);
   try {
     const chartYaml = yaml.load(
@@ -66,7 +66,6 @@ export async function listApps() {
   const root  = await ensureRepo();
   const files = await findAppFiles(root);
 
-  /* gather promises for icon extraction ----------------------- */
   const promises = [];
 
   for (const file of files) {
@@ -85,11 +84,9 @@ export async function listApps() {
 
   const results = await Promise.all(promises);
 
-  /* de-dupe by name (icon from first hit wins) ---------------- */
+  /* de-dupe by name (icon from first hit wins) */
   const seen = new Map();
-  for (const { name, icon } of results) {
-    if (!seen.has(name)) seen.set(name, icon);
-  }
+  for (const { name, icon } of results) if (!seen.has(name)) seen.set(name, icon);
   return [...seen.entries()].map(([name, icon]) => ({ name, icon }));
 }
 
@@ -138,11 +135,12 @@ export async function buildZip(keepNames, tokenOutput = cfg.nameDefault) {
     }));
   }
 
-  /* 2d) Zip & return stream ------------------------------------ */
-  const arch = Archiver("zip", { zlib: { level: 9 } });
+  /* 2d) Zip & return stream  – NEW TOP-LEVEL DIR ---------------- */
+  const topDir = (tokenOutput || "bundle").replace(/[^\w.-]+/g, "_");
+  const arch   = Archiver("zip", { zlib: { level: 9 } });
   arch.on("warning", console.warn);
   arch.on("error", (err) => { throw err; });
-  arch.directory(tmp, false);
+  arch.directory(tmp, topDir);        // <── path level added here
   arch.finalize();
   return arch;
 }
