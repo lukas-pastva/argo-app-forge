@@ -79,7 +79,9 @@ export default function AppsList({ file }) {
                      className="app-card"
                      style={{cursor:clickable?"pointer":"default"}}
                      {...(clickable && { onClick:()=>openDetail(hit) })}>
-                  <span>📦</span>
+                  {hit.icon
+                    ? <img src={hit.icon} alt="" style={{ width: 26, height: 26, borderRadius: 4, background: "#fff" }} />
+                    : <span>📦</span>}
                   <div style={{ minWidth:0 }}>
                     <span className="name"
                           style={{whiteSpace:"nowrap",overflow:"hidden",
