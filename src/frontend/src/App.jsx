@@ -1,38 +1,52 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-/* simple helper for selecting / deselecting all */
-const allNames = (arr) => new Set(arr.map((a) => a.name));
+/* helper: full set of names */
+const namesSet = (arr) => new Set(arr.map((a) => a.name));
 
 export default function App() {
-  const [apps, setApps]   = useState([]);          // [{name,icon,desc?}]
-  const [sel , setSel ]   = useState(new Set());
-  const [name, setName]   = useState("");          // replacement token
-  const [busy, setBusy]   = useState(false);
-  const [showHelp, setH ] = useState(false);
-  const [tried, setTry  ] = useState(false);       // form attempted?
+  const [apps, setApps] = useState([]);            // [{name,icon,desc,maint}]
+  const [sel , setSel ] = useState(new Set());
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [tried, setTry] = useState(false);         // attempted submit?
+  const [open, setOpen] = useState(new Set());     // info toggles
 
-  /* ── fetch list + default name on mount ────────────────────── */
+  /* ── fetch data once ───────────────────────────────────────── */
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
-    fetch("/api/defaults").then(r => r.json()).then(d => setName(d.name || ""));
+    fetch("/api/defaults")
+      .then(r => r.json())
+      .then(d => setName((d.name || "").toLowerCase()));
   }, []);
 
-  /* ── helpers ──────────────────────────────────────────────── */
-  const error = tried && !name.trim();
+  /* ── validation ───────────────────────────────────────────── */
+  const reValid = /^[a-z0-9.=]+$/;
+  const valid   = !!name.trim() && reValid.test(name.trim());
+  const errMsg  = !tried ? ""
+               : !name.trim() ? "Name is required."
+               : "Only lower-case letters, digits, '.' and '=' allowed.";
 
-  function toggle(item) {
+  /* ── selection helpers ────────────────────────────────────── */
+  const toggle = (n) => {
     const next = new Set(sel);
-    next.has(item) ? next.delete(item) : next.add(item);
+    next.has(n) ? next.delete(n) : next.add(n);
     setSel(next);
-  }
+  };
+  const toggleInfo = (n) => {
+    const next = new Set(open);
+    next.has(n) ? next.delete(n) : next.add(n);
+    setOpen(next);
+  };
 
+  /* ── build ZIP ────────────────────────────────────────────── */
   async function build() {
     setTry(true);
-    if (!name.trim()) return;
+    if (!valid) return;
 
     setBusy(true);
-    const res  = await fetch("/api/build", {
+    const res = await fetch("/api/build", {
       method : "POST",
       headers: { "Content-Type": "application/json" },
       body   : JSON.stringify({ selected: [...sel], name })
@@ -45,48 +59,44 @@ export default function App() {
     setBusy(false);
   }
 
-  /* ── modal component ───────────────────────────────────────── */
-  function HelpModal() {
-    return (
-      <div className="modal-overlay" onClick={() => setH(false)}>
-        <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
-          <button className="modal-close" onClick={() => setH(false)}>×</button>
-          <h2>Help &nbsp;📘</h2>
-          <p>
-            <strong>AppForge</strong> packages exactly the selection you make
-            below into a ready-to-apply GitOps repository:
-          </p>
-          <ul style={{ margin: ".8rem 0 1.4rem 1.2rem", lineHeight: "1.6" }}>
-            <li>clones the upstream Argo CD <em>app-of-apps</em> repo</li>
-            <li>keeps only the Applications you tick</li>
-            <li>replaces every occurrence of the token with the <em>Name</em> you enter</li>
-            <li>streams the result as a single ZIP archive</li>
-          </ul>
-          <p>
-            Use it when rolling out a **new RKE2 cluster** – you’ll get a trimmed
-            repo that can be pushed to your Git server or used as a one-off
-            payload for <code>argocd app create …</code>
-          </p>
-        </div>
+  /* ── help modal component ─────────────────────────────────── */
+  const Help = () => (
+    <div className="modal-overlay" onClick={() => setHelp(false)}>
+      <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={() => setHelp(false)}>×</button>
+        <h2>Help 📘</h2>
+        <p>
+          <strong>AppForge</strong> prepares a <em>ready-to-push</em> Git repository
+          that bootstraps a new&nbsp;RKE2 cluster with just the components you pick:
+        </p>
+        <ul style={{ margin:".9rem 0 1.5rem 1.3rem",lineHeight:"1.55" }}>
+          <li>clones the upstream <code>app-of-apps</code> repo</li>
+          <li>keeps only the selected <code>Application</code>s</li>
+          <li>copies the referenced <code>charts/external/…</code> versions</li>
+          <li>replaces every token with the <em>Name</em> you provide</li>
+          <li>streams everything as one ZIP which you can push or unpack</li>
+        </ul>
+        <p style={{ marginTop:".6rem" }}>
+          Typical workflow: generate → push to VCS → point Argo CD at the new repo &
+          watch your cluster sync itself within minutes.
+        </p>
       </div>
-    );
-  }
+    </div>
+  );
 
   /* ── render ───────────────────────────────────────────────── */
   return (
     <div className="app-wrapper">
-      {/* floating controls */}
-      <button className="help-btn" onClick={() => setH(true)}>ℹ️ Help</button>
+      <button className="help-btn" onClick={() => setHelp(true)}>ℹ️ Help</button>
 
-      {/* heading + intro */}
       <h1>AppForge</h1>
       <p className="intro">
-        This tool streamlines onboarding of **new RKE2 clusters**. Choose the
-        components you want and generate a pre-filled&nbsp;
-        <em>app-of-apps</em> GitOps repository in seconds.
+        This tool streamlines onboarding of <strong>new RKE2 clusters</strong>.
+        Choose the components you need and generate a trimmed&nbsp;
+        <em>app-of-apps</em> repository in seconds.
       </p>
 
-      {/* Name field + Download button */}
+      {/* Name + Download */}
       <div style={{ display:"flex",alignItems:"flex-end",gap:"1.2rem" }}>
         <div style={{ flex:1 }}>
           <label>Name</label>
@@ -95,21 +105,20 @@ export default function App() {
             onChange={e => setName(e.target.value.toLowerCase())}
             style={{ width:"100%",padding:".55rem .9rem",fontSize:"1rem" }}
           />
-          {error && <div className="error">Name is required.</div>}
+          {errMsg && <div className="error">{errMsg}</div>}
         </div>
         <button
           className="btn"
           disabled={busy || !sel.size}
           onClick={build}
-          style={{ whiteSpace:"nowrap" }}
         >
           {busy ? "Building…" : "Download ZIP"}
         </button>
       </div>
 
-      {/* bulk-select helpers */}
+      {/* bulk-select */}
       <div className="apps-actions">
-        <button className="btn" onClick={() => setSel(allNames(apps))}>
+        <button className="btn" onClick={() => setSel(namesSet(apps))}>
           Select all
         </button>
         <button className="btn-secondary" onClick={() => setSel(new Set())}>
@@ -117,34 +126,51 @@ export default function App() {
         </button>
       </div>
 
-      {/* explanatory subtitle */}
       <p className="apps-header">
         Please select which apps you want to be installed on the&nbsp;RKE2 cluster:
       </p>
 
-      {/* app grid */}
+      {/* grid */}
       <ul className="apps-list">
-        {apps.map(app => (
-          <li
-            key={app.name}
-            className="app-item"
-            onClick={() => toggle(app.name)}
-            title={app.desc || app.name}
-          >
-            <input
-              type="checkbox"
-              checked={sel.has(app.name)}
-              readOnly
-            />
-            {app.icon
-              ? <img src={app.icon} alt="" />
-              : <span style={{ fontSize:"1.1rem" }}>📦</span>}
-            <span className="name">{app.name}</span>
-          </li>
-        ))}
+        {apps.map(app => {
+          const openInfo = open.has(app.name);
+          return (
+            <li key={app.name}>
+              <div
+                className="app-item"
+                onClick={() => toggle(app.name)}
+              >
+                <input type="checkbox" checked={sel.has(app.name)} readOnly />
+                {app.icon
+                  ? <img src={app.icon} alt="" />
+                  : <span style={{ fontSize:"1.1rem" }}>📦</span>}
+                <span className="name">{app.name}</span>
+                {(app.desc || app.maint) && (
+                  <span
+                    className="more-btn"
+                    onClick={e => { e.stopPropagation(); toggleInfo(app.name); }}
+                  >
+                    {openInfo ? "Hide" : "More info"}
+                  </span>
+                )}
+              </div>
+
+              {openInfo && (
+                <div className="app-more">
+                  {app.desc && <p style={{ margin:0 }}>{app.desc}</p>}
+                  {app.maint && (
+                    <p style={{ margin:".3rem 0 0",fontSize:".8rem" }}>
+                      <strong>Maintainers:</strong> {app.maint}
+                    </p>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
-      {showHelp && <HelpModal />}
+      {help && <Help />}
     </div>
   );
 }

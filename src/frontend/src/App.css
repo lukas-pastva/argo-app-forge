@@ -15,14 +15,10 @@
 /* ────────────────────────────────────────────────────────────────
    GLOBAL RESET
    ────────────────────────────────────────────────────────────── */
-*{
-  box-sizing:border-box;margin:0;padding:0;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-}
-body{
-  background:var(--bg);color:var(--text);
-  transition:background .25s,color .25s;line-height:1.5;
-}
+*{box-sizing:border-box;margin:0;padding:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+body{background:var(--bg);color:var(--text);
+     transition:background .25s,color .25s;line-height:1.5;}
 
 /* ────────────────────────────────────────────────────────────────
    LAYOUT CONTAINER
@@ -75,7 +71,7 @@ body{
 .apps-actions .btn{padding:.45rem 1.1rem;font-size:.9rem;}
 
 /* ────────────────────────────────────────────────────────────────
-   PROJECT-GROUP  (one block per env/cluster)
+   PROJECT-GROUP  (one block per env/cluster)  – keeps legacy pages
    ────────────────────────────────────────────────────────────── */
 .project-group{
   border:1px solid var(--border);border-radius:10px;
@@ -93,7 +89,7 @@ body{
   grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
 }
 .app-item{
-  display:flex;align-items:center;gap:.8rem;
+  display:flex;align-items:flex-start;gap:.8rem;
   padding:.65rem 1rem;border:1px solid var(--border);border-radius:8px;
   cursor:pointer;background:var(--card-bg);
   transition:background .18s,border-color .18s,box-shadow .18s;
@@ -103,10 +99,17 @@ body{
   box-shadow:0 1px 4px rgba(0,0,0,.04);
 }
 [data-theme='dark'] .app-item:hover{background:#242a30;}
-.app-item input{pointer-events:none;margin-right:.15rem;}
+.app-item input{pointer-events:none;margin-top:.25rem;margin-right:.1rem;}
 .app-item img{width:26px;height:26px;border-radius:4px;background:#fff;}
 .app-item .name{font-weight:600;color:var(--text);flex:1 1 auto;}
-.app-item small{color:var(--text-light);font-size:.72rem;display:block;}
+.app-item .more-btn{
+  font-size:.8rem;color:var(--primary);text-decoration:underline;cursor:pointer;
+  flex:0 0 auto;
+}
+.app-more{
+  margin:.55rem 0 .2rem 2.2rem;font-size:.85rem;color:var(--text-light);
+  line-height:1.4;
+}
 
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE
@@ -145,9 +148,8 @@ body{
   margin-top:.5rem;border:1px solid var(--border);border-radius:6px;
   max-height:260px;overflow-y:auto;
 }
-.result-item{
-  display:flex;align-items:center;gap:.7rem;padding:.55rem .9rem;cursor:pointer;
-}
+.result-item{display:flex;align-items:center;gap:.7rem;padding:.55rem .9rem;
+             cursor:pointer;}
 .result-item:hover{background:#f1f4f7;}
 [data-theme='dark'] .result-item:hover{background:#242a30;}
 .result-item img{
@@ -155,7 +157,7 @@ body{
 }
 
 /* ────────────────────────────────────────────────────────────────
-   SPINNER
+   SPINNER  (kept)
    ────────────────────────────────────────────────────────────── */
 @keyframes spin{to{transform:rotate(360deg);}}
 .spinner{
@@ -182,7 +184,7 @@ body{
 body.modal-open{overflow:hidden;}
 
 /* ────────────────────────────────────────────────────────────────
-   OVERRIDE EDITOR  (ValuesEditor)
+   OVERRIDE EDITOR (ValuesEditor)  – unchanged
    ────────────────────────────────────────────────────────────── */
 .editor-frame{
   margin:1rem 0 1.5rem;border:1px solid var(--border);border-radius:6px;
@@ -192,14 +194,4 @@ body.modal-open{overflow:hidden;}
 .edit-fab{
   position:absolute;top:6px;right:6px;z-index:10;
   padding:.35rem .9rem;font-size:.8rem;line-height:1.1;
-}
-
-/* ────────────────────────────────────────────────────────────────
-   DUPLICATE SPINNER BLOCK (left intact for safety)
-   ────────────────────────────────────────────────────────────── */
-@keyframes spin{to{transform:rotate(360deg);}}
-.spinner{
-  width:24px;height:24px;border:3px solid var(--border);
-  border-top-color:var(--primary);border-radius:50%;
-  animation:spin 1s linear infinite;margin:auto;
 }
