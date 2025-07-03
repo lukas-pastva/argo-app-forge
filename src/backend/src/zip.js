@@ -1,10 +1,8 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
     Clone → filter selected Applications → optional token-replace
-    → stream back a ZIP.
-
-    v3 – adds top-level directory named after the “Name” input
-    and keeps the earlier async-safe icon extraction fix.
+    → package every­thing under <name>/ into a ZIP streamed back
+    to the client.
 */
 
 import fs       from "fs/promises";
@@ -15,7 +13,7 @@ import Archiver from "archiver";
 import { ensureRepo } from "./git.js";
 import cfg      from "./config.js";
 
-/* helper – find every “app-of-apps” file that matches APPS_GLOB */
+/* helper – list every file that matches APPS_GLOB */
 async function findAppFiles(root) {
   const files = await fg(cfg.appsGlob, { cwd: root, absolute: true });
   if (!files.length) {
@@ -24,74 +22,75 @@ async function findAppFiles(root) {
   return files;
 }
 
-/* helper – best-effort icon extractor (repo charts only) */
-async function chartIcon(root, app) {
-  if (!app.path) return null;                       // remote chart
+/* helper – pull icon + description from Chart.yaml or fallbacks */
+async function chartMeta(root, app) {
+  if (!app.path) return { icon: null, desc: "" };   // remote chart
   const chartDir = path.join(root, app.path);
+
   try {
     const chartYaml = yaml.load(
-      await fs.readFile(path.join(chartDir, "Chart.yaml"), "utf8")
+      await fs.readFile(path.join(chartDir, "Chart.yaml"), "utf8"),
     ) || {};
+
+    /* ─ icon ─────────────────────────────────────────────── */
     let iconRef = chartYaml.icon || "";
-
-    /* remote URL? just return it */
-    if (/^https?:\/\//.test(iconRef)) return iconRef;
-
-    /* local file? */
     if (!iconRef) {
       for (const f of ["icon.png", "icon.jpg", "icon.svg", "logo.png"]) {
-        try { await fs.access(path.join(chartDir, f)); iconRef = f; break; }
-        catch { /* ignore */ }
+        try { await fs.access(path.join(chartDir, f)); iconRef = f; break; } catch {}
       }
     }
-    if (!iconRef) return null;
+    let icon = null;
+    if (iconRef) {
+      if (/^https?:\/\//.test(iconRef)) {
+        icon = iconRef;
+      } else {
+        const abs  = path.join(chartDir, iconRef);
+        const buf  = await fs.readFile(abs);
+        const ext  = path.extname(iconRef).toLowerCase();
+        const mime = ext === ".svg" ? "image/svg+xml"
+                  : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg"
+                  : "image/png";
+        icon = `data:${mime};base64,${buf.toString("base64")}`;
+      }
+    }
 
-    const abs  = path.join(chartDir, iconRef);
-    const buf  = await fs.readFile(abs);
-    const ext  = path.extname(iconRef).toLowerCase();
-    const mime =
-      ext === ".svg"               ? "image/svg+xml" :
-      ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
-      "image/png";
-    return `data:${mime};base64,${buf.toString("base64")}`;
+    /* ─ description ──────────────────────────────────────── */
+    const desc = chartYaml.description || "";
+
+    return { icon, desc };
   } catch {
-    return null;
+    return { icon: null, desc: "" };
   }
 }
 
 /* ───────────────────────────────────────────────────────────────
-   1) Flatten Applications and attach icons
+   1) Flatten Application list (icon + description)
    ───────────────────────────────────────────────────────────── */
 export async function listApps() {
   const root  = await ensureRepo();
   const files = await findAppFiles(root);
-
-  const promises = [];
+  const flat  = [];
 
   for (const file of files) {
     const doc = yaml.load(await fs.readFile(file, "utf8")) || {};
-    (doc.appProjects || []).forEach((proj) => {
-      (proj.applications || []).forEach((app) => {
-        promises.push(
-          (async () => ({
-            name: app.name,
-            icon: await chartIcon(root, app)    // may be null
-          }))()
-        );
-      });
-    });
+    for (const proj of doc.appProjects || []) {
+      for (const app of proj.applications || []) {
+        const meta = await chartMeta(root, app);
+        flat.push({ name: app.name, ...meta });
+      }
+    }
   }
 
-  const results = await Promise.all(promises);
-
-  /* de-dupe by name (icon from first hit wins) */
-  const seen = new Map();
-  for (const { name, icon } of results) if (!seen.has(name)) seen.set(name, icon);
-  return [...seen.entries()].map(([name, icon]) => ({ name, icon }));
+  /* de-duplicate by name (icon/desc from first occurrence wins) */
+  const uniq = new Map();
+  for (const { name, icon, desc } of flat) {
+    if (!uniq.has(name)) uniq.set(name, { icon, desc });
+  }
+  return [...uniq.entries()].map(([name, m]) => ({ name, icon: m.icon, desc: m.desc }));
 }
 
 /* ───────────────────────────────────────────────────────────────
-   2) Build filtered ZIP
+   2) Build filtered ZIP (packaged under <name>/)
    ───────────────────────────────────────────────────────────── */
 export async function buildZip(keepNames, tokenOutput = cfg.nameDefault) {
   const root = await ensureRepo();
@@ -101,18 +100,18 @@ export async function buildZip(keepNames, tokenOutput = cfg.nameDefault) {
   await fs.rm(tmp, { recursive: true, force: true });
   await fs.cp(root, tmp, { recursive: true });
 
-  /* 2a) Trim Application blocks in every matching file ---------- */
+  /* 2a) Trim Application blocks -------------------------------- */
   const appFiles = await findAppFiles(tmp);
-  await Promise.all(appFiles.map(async (aoa) => {
-    const doc = yaml.load(await fs.readFile(aoa, "utf8")) || {};
+  await Promise.all(appFiles.map(async (f) => {
+    const doc = yaml.load(await fs.readFile(f, "utf8")) || {};
     doc.appProjects = (doc.appProjects || [])
-      .map((proj) => {
-        proj.applications = (proj.applications || [])
-          .filter((app) => keepNames.includes(app.name));
-        return proj;
+      .map(p => {
+        p.applications = (p.applications || [])
+          .filter(a => keepNames.includes(a.name));
+        return p;
       })
-      .filter((proj) => proj.applications.length);
-    await fs.writeFile(aoa, yaml.dump(doc));
+      .filter(p => p.applications.length);
+    await fs.writeFile(f, yaml.dump(doc));
   }));
 
   /* 2b) Delete unused values/*.yaml ----------------------------- */
@@ -135,12 +134,11 @@ export async function buildZip(keepNames, tokenOutput = cfg.nameDefault) {
     }));
   }
 
-  /* 2d) Zip & return stream  – NEW TOP-LEVEL DIR ---------------- */
-  const topDir = (tokenOutput || "bundle").replace(/[^\w.-]+/g, "_");
-  const arch   = Archiver("zip", { zlib: { level: 9 } });
+  /* 2d) Zip & return stream  (everything under <name>/) -------- */
+  const arch = Archiver("zip", { zlib: { level: 9 } });
   arch.on("warning", console.warn);
-  arch.on("error", (err) => { throw err; });
-  arch.directory(tmp, topDir);        // <── path level added here
+  arch.on("error", err => { throw err; });
+  arch.directory(tmp, tokenOutput || "bundle");   // <-- top-level folder
   arch.finalize();
   return arch;
 }

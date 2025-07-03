@@ -1,76 +1,89 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-/* allowed characters: a-z 0-9 . =  (lower-case only) */
+/* allowed characters for NAME input */
 const NAME_RE = /^[a-z0-9.=]+$/;
 
-/* simple modal with richer help --------------------------------- */
+/* ------------------------------------------------------------------ */
+/*  Help modal – right-side pane                                      */
+/* ------------------------------------------------------------------ */
 function HelpModal({ onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-dialog"
-        style={{ width: "64vw", maxWidth: 720 }}
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>×</button>
-        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: ".5rem" }}>
-          🚀 How AppForge streamlines onboarding
+
+        <h2 style={{ marginTop: 0, marginBottom: ".8rem",
+                     display: "flex", alignItems: "center", gap: ".6rem" }}>
+          🚀 AppForge onboarding guide
         </h2>
-        <p style={{ margin: ".5rem 0 1rem" }}>
-          AppForge is a self-service tool for <strong>accelerating RKE2 cluster
-          onboarding</strong>.  In just a few clicks you receive a fully-trimmed&nbsp;
-          <em>app-of-apps</em> Git repository that’s ready for Argo CD.
+
+        <p style={{ marginBottom: "1.5rem", lineHeight: 1.6 }}>
+          AppForge speeds up <strong>RKE2 cluster onboarding</strong> by
+          producing a trimmed, token-replaced&nbsp;
+          <em>app-of-apps</em> Git repository – ready for Argo CD – in seconds.
         </p>
 
-        <ol style={{ margin: "0 0 1.2rem 1.2rem", lineHeight: 1.6 }}>
-          <li>🔑 <strong>Name</strong>: supply a lowercase identifier (e.g.
-              <code>staging.eu</code>). It becomes
-              <em>•</em> the replacement token, <em>•</em> the top-level folder
-              inside the ZIP, and <em>•</em> the cluster name used in manifests.</li>
-          <li>📦 <strong>Select apps</strong>: tick only the Helm
-              Applications you want to ship with the cluster.</li>
-          <li>⚙️ <strong>Generate</strong>: hit <em>Download ZIP</em>.
-              AppForge clones your GitOps repo, removes everything else, performs
-              token replacement and bundles the result inside
-              <code>{`<name>/`}</code>.</li>
-          <li>🛠 <strong>Push & deploy</strong>: unzip, commit to your Git
-              provider, and let Argo CD bootstrap the new cluster.</li>
+        <ol style={{ marginLeft: "1.1rem", lineHeight: 1.75, fontSize: ".97rem" }}>
+          <li>🔑 <strong>Name</strong>: enter a lowercase token (e.g.&nbsp;
+              <code>staging.eu</code>). It becomes the replacement string and
+              the root folder inside the ZIP.</li>
+          <li>📦 <strong>Select apps</strong>: tick the Helm Applications to
+              ship with the cluster. Use the <em>Select all</em>/<em>Clear all</em>
+              shortcuts for speed.</li>
+          <li>🛠 <strong>Download ZIP</strong>: AppForge clones your GitOps
+              repo, prunes unselected apps, performs token replacement and
+              bundles the result under <code>&lt;name&gt;/</code>.</li>
+          <li>🚚 <strong>Commit & deploy</strong>: push the folder to Git and
+              let Argo CD bootstrap the cluster.</li>
         </ol>
 
-        <p style={{ fontSize: ".9rem", color: "var(--text-light)" }}>
-          Tip 💡 — No K8s or Docker creds ever leave the container; everything
-          happens in an isolated, ephemeral workspace.
+        <p style={{ marginTop: "1.2rem", fontSize: ".92rem",
+                    color: "var(--text-light)" }}>
+          💡  Everything runs in an isolated container; no Kubernetes
+          credentials ever leave the environment.
         </p>
       </div>
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Main component                                                    */
+/* ------------------------------------------------------------------ */
 export default function App() {
-  const [apps, setApps]    = useState([]);     // [{name,icon}]
-  const [sel , setSel ]    = useState(new Set());
-  const [name, setName]    = useState("");     // replacement token
-  const [busy, setBusy]    = useState(false);
-  const [showHelp, setH ]  = useState(false);
-  const [err , setErr ]    = useState("");     // validation error
+  const [apps, setApps]   = useState([]);          // [{name,icon,desc}]
+  const [sel , setSel ]   = useState(new Set());   // selected names
+  const [name, setName]   = useState("");          // replacement token
+  const [busy, setBusy]   = useState(false);
+  const [showHelp, setH ] = useState(false);
+  const [err , setErr ]   = useState("");
 
-  /* load list + default name on mount */
+  /* fetch list + default name on mount */
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
-    fetch("/api/defaults")
-      .then(r => r.json())
-      .then(d => setName(d.name || ""));
+    fetch("/api/defaults").then(r => r.json()).then(d => setName(d.name || ""));
   }, []);
 
-  /* validation -------------------------------------------------- */
+  /* validate name ------------------------------------------------ */
   function validate(v) {
     if (!v.trim()) return "Name is required.";
     if (!NAME_RE.test(v)) return "Lowercase letters, digits, '.' or '=' only.";
     return "";
   }
+  useEffect(() => setErr(validate(name)), [name]);
 
-  /* build ZIP --------------------------------------------------- */
+  /* helpers ------------------------------------------------------ */
+  const toggle = (n) => {
+    const s = new Set(sel);
+    s.has(n) ? s.delete(n) : s.add(n);
+    setSel(s);
+  };
+  const selectAll   = () => setSel(new Set(apps.map(a => a.name)));
+  const clearAll    = () => setSel(new Set());
+  const canBuild    = !busy && sel.size && !err;
+
+  /* build ZIP ---------------------------------------------------- */
   async function build() {
     setBusy(true);
     const res  = await fetch("/api/build", {
@@ -86,76 +99,63 @@ export default function App() {
     setBusy(false);
   }
 
-  /* handle name change ----------------------------------------- */
-  function onName(e) {
-    const v = e.target.value.toLowerCase();   // force lower
-    setName(v);
-    setErr(validate(v));
-  }
-
-  /* initial validation for default name ------------------------ */
-  useEffect(() => setErr(validate(name)), [name]);
-
-  const canBuild = !busy && sel.size && !err;
-
-  /* render ------------------------------------------------------ */
+  /* render ------------------------------------------------------- */
   return (
     <div className="app-wrapper">
-      {/* floating help / theme buttons */}
+      {/* floating UI icons */}
       <button className="help-btn" onClick={() => setH(true)} title="Help">❔</button>
 
-      <h1 style={{ display: "flex", alignItems: "center", gap: ".45rem" }}>
+      <h1 style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
         ⚡ AppForge
       </h1>
+
       <p className="intro">
-        🏗️ This portal is purpose-built for <strong>on-boarding new
-        RKE2 clusters</strong>.  It trims an existing GitOps repository to only
-        the selected Helm apps and produces an <em>app-of-apps</em> bundle in
-        seconds.
+        🏗️ Use this portal to generate an <em>app-of-apps</em> repo for new
+        RKE2 clusters in one click.
       </p>
 
-      {/* replacement name input */}
+      {/* ---- name input ---- */}
       <label style={{ fontWeight: 600, display: "block", marginBottom: ".4rem" }}>
-        Name&nbsp;🔑
+        Name 🔑
       </label>
       <input
         value={name}
-        onChange={onName}
-        style={{
-          width: "100%", padding: ".55rem .8rem", fontSize: "1rem",
-          marginBottom: ".3rem"
-        }}
+        onChange={e => { const v = e.target.value.toLowerCase(); setName(v); setErr(validate(v)); }}
+        style={{ width: "100%", padding: ".55rem .8rem", fontSize: "1rem", marginBottom: ".35rem" }}
       />
       {err && <div className="error">{err}</div>}
 
-      {/* app selector */}
-      <ul className="apps-list" style={{ marginBottom: "1.5rem" }}>
+      {/* ---- bulk select actions ---- */}
+      <div className="apps-actions">
+        <button className="btn-secondary" onClick={selectAll}>Select all</button>
+        <button className="btn-secondary" onClick={clearAll}>Clear all</button>
+      </div>
+
+      {/* ---- app selector ---- */}
+      <ul className="apps-list" style={{ marginBottom: "1.6rem" }}>
         {apps.map(app => (
           <li key={app.name}>
-            <label style={{ display: "flex", alignItems: "center", gap: ".6rem" }}>
+            <div
+              className="app-item"
+              title={app.desc || ""}
+              onClick={() => toggle(app.name)}
+            >
               <input
                 type="checkbox"
                 checked={sel.has(app.name)}
-                onChange={e => {
-                  const s = new Set(sel);
-                  e.target.checked ? s.add(app.name) : s.delete(app.name);
-                  setSel(s);
-                }}
+                readOnly
               />
               {app.icon
-                ? <img src={app.icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />
+                ? <img src={app.icon} alt="" />
                 : <span style={{ fontSize: "1.1rem" }}>📦</span>}
               {app.name}
-            </label>
+            </div>
           </li>
         ))}
       </ul>
 
-      <button
-        className="btn"
-        disabled={!canBuild}
-        onClick={build}
-      >
+      {/* ---- build button ---- */}
+      <button className="btn" disabled={!canBuild} onClick={build}>
         {busy ? "Building…" : "Download ZIP"}
       </button>
 
