@@ -8,6 +8,7 @@
     "deep-object-diff": "^1.1.2",
     "express": "^4.19.2",
     "fast-glob": "^3.3.2",
+    "archiver": "^6.0.2",
     "helmet": "^7.0.0",
     "js-yaml": "^4.1.0"
   }
