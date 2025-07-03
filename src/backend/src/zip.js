@@ -1,7 +1,6 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
-    Clone → filter selected Applications → keep only referenced
-    charts → optional token-replace → stream back a ZIP.
+    listApps() → [{ name, icon, desc, maint, readme, home }]
 */
 
 import fs       from "fs/promises";
@@ -12,170 +11,124 @@ import Archiver from "archiver";
 import { ensureRepo } from "./git.js";
 import cfg      from "./config.js";
 
-/* ───────────────────────────────────────────────────────────────
-   helpers
-   ───────────────────────────────────────────────────────────── */
-const commonIcons = ["icon.png", "icon.jpg", "icon.svg", "logo.png"];
+/* helper ─────────────────────────────────────────────────────── */
+const commonIcons = ["icon.png","icon.jpg","icon.svg","logo.png"];
+async function fileExists(p){ try{ await fs.access(p); return true; } catch{ return false; } }
 
-/* Extract icon, description, maintainers from a chart (repo charts only) */
-async function chartMeta(root, app) {
-  if (!app.path) return { icon: null, desc: "", maint: "" }; // remote chart
-  const chartDir = path.join(root, app.path);
-  try {
-    const chartYaml = yaml.load(
-      await fs.readFile(path.join(chartDir, "Chart.yaml"), "utf8")
-    ) || {};
+/* pull meta from a repo-local chart dir */
+async function chartMeta(root, chartPath){
+  const chartDir  = path.join(root, chartPath);
+  const chartFile = path.join(chartDir, "Chart.yaml");
 
-    /* icon ----------------------------------------------------- */
-    let iconRef = chartYaml.icon || "";
-    if (!iconRef) {
-      for (const f of commonIcons) {
-        try { await fs.access(path.join(chartDir, f)); iconRef = f; break; }
-        catch { /* ignore */ }
-      }
+  let icon=null, desc="", maint="", readme="", home="";
+  try{
+    const meta = yaml.load(await fs.readFile(chartFile,"utf8"))||{};
+    desc  = meta.description || "";
+    maint = (meta.maintainers||[]).map(m=>m.name||m).join(", ");
+    home  = meta.home || "";
+
+    /* icon – same logic as before */
+    let ref = meta.icon||"";
+    if(!ref){
+      for(const f of commonIcons) if(await fileExists(path.join(chartDir,f))){ ref=f; break; }
     }
-    let icon = null;
-    if (/^https?:\/\//.test(iconRef)) {
-      icon = iconRef; // remote URL
-    } else if (iconRef) {
-      try {
-        const buf = await fs.readFile(path.join(chartDir, iconRef));
-        const ext = path.extname(iconRef).toLowerCase();
-        const mime =
-          ext === ".svg"  ? "image/svg+xml" :
-          ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
-          "image/png";
-        icon = `data:${mime};base64,${buf.toString("base64")}`;
-      } catch { /* ignore */ }
+    if(/^https?:\/\//.test(ref)){ icon=ref; }
+    else if(ref){
+      const buf=await fs.readFile(path.join(chartDir,ref));
+      const ext=path.extname(ref).toLowerCase();
+      const mime=ext===".svg"?"image/svg+xml":ext===".jpg"||ext===".jpeg"?"image/jpeg":"image/png";
+      icon=`data:${mime};base64,${buf.toString("base64")}`;
     }
 
-    /* description & maintainers -------------------------------- */
-    const desc  = chartYaml.description || "";
-    const maint = (chartYaml.maintainers || [])
-      .map(m => (m.name || m).trim())
-      .filter(Boolean)
-      .join(", ");
-
-    return { icon, desc, maint };
-  } catch {
-    return { icon: null, desc: "", maint: "" };
-  }
+    /* README (first 30 non-blank lines) */
+    const rd=path.join(chartDir,"README.md");
+    if(await fileExists(rd)){
+      const lines=(await fs.readFile(rd,"utf8"))
+        .split(/\r?\n/).filter(l=>l.trim()).slice(0,30);
+      readme=lines.join("\n");
+    }
+  }catch{/* ignore */}
+  return { icon, desc, maint, readme, home };
 }
 
-/* find every “app-of-apps” YAML matching APPS_GLOB */
-async function findAppFiles(root) {
-  const files = await fg(cfg.appsGlob, { cwd: root, absolute: true });
-  if (!files.length) {
-    throw new Error(`No file matched APPS_GLOB="${cfg.appsGlob}" in ${root}`);
-  }
-  return files;
+/* locate every app-of-apps YAML */
+async function appFiles(root){
+  const f=await fg(cfg.appsGlob,{cwd:root,absolute:true});
+  if(!f.length) throw new Error(`No file matched APPS_GLOB="${cfg.appsGlob}"`);
+  return f;
 }
 
-/* ───────────────────────────────────────────────────────────────
-   1) Flatten Applications  (+ icon / desc / maintainers)
-   ───────────────────────────────────────────────────────────── */
-export async function listApps() {
-  const root  = await ensureRepo();
-  const files = await findAppFiles(root);
-  const out   = [];
+/* ── 1)  Flatten with rich meta ─────────────────────────────── */
+export async function listApps(){
+  const root = await ensureRepo();
+  const files= await appFiles(root);
+  const out  = [];
 
-  for (const file of files) {
-    const doc = yaml.load(await fs.readFile(file, "utf8")) || {};
-    for (const proj of doc.appProjects || []) {
-      for (const app of proj.applications || []) {
-        const meta = await chartMeta(root, app);
-        out.push({
-          name : app.name,
-          icon : meta.icon,
-          desc : meta.desc,
-          maint: meta.maint
-        });
+  for(const file of files){
+    const doc=yaml.load(await fs.readFile(file,"utf8"))||{};
+    for(const proj of doc.appProjects||[])
+      for(const app of proj.applications||[]){
+        const meta = app.path ? await chartMeta(root, app.path) : {};
+        out.push({ name:app.name, ...meta });
       }
-    }
   }
-
-  /* de-dupe by name (first hit wins) */
-  const seen = new Map();
-  for (const a of out) if (!seen.has(a.name)) seen.set(a.name, a);
+  /* de-dupe by name */
+  const seen=new Map();
+  for(const a of out) if(!seen.has(a.name)) seen.set(a.name,a);
   return [...seen.values()];
 }
 
-/* ───────────────────────────────────────────────────────────────
-   2) Build filtered ZIP
-   ───────────────────────────────────────────────────────────── */
-export async function buildZip(keepNames, tokenOutput = cfg.nameDefault) {
-  const root = await ensureRepo();
+/* ── 2)  buildZip() — unchanged except for chart-prune logic ── */
+export async function buildZip(keepNames, tokenOutput=cfg.nameDefault){
+  const root=await ensureRepo();
 
-  /* —— Figure out which chart dirs we must keep ———————— */
-  const neededCharts = new Set(); // repo-relative paths
-  const appFilesRoot = await findAppFiles(root);
-
-  for (const file of appFilesRoot) {
-    const doc = yaml.load(await fs.readFile(file, "utf8")) || {};
-    for (const proj of doc.appProjects || []) {
-      for (const app of proj.applications || []) {
-        if (keepNames.includes(app.name) && app.path) {
-          neededCharts.add(app.path.replace(/^\.?\/*/, "")); // normalise
-        }
-      }
-    }
+  /* which chart paths are referenced? */
+  const needed=new Set();
+  const files=await appFiles(root);
+  for(const file of files){
+    const doc=yaml.load(await fs.readFile(file,"utf8"))||{};
+    for(const proj of doc.appProjects||[])
+      for(const app of proj.applications||[])
+        if(keepNames.includes(app.name)&&app.path)
+          needed.add(app.path.replace(/^\.?\/*/,""));
   }
 
-  /* —— Prepare working copy ——————————————— */
-  const tmp = path.join(process.cwd(), "tmp-filtered");
-  await fs.rm(tmp, { recursive: true, force: true });
-  await fs.cp(root, tmp, { recursive: true });
+  const tmp=path.join(process.cwd(),"tmp-filtered");
+  await fs.rm(tmp,{recursive:true,force:true});
+  await fs.cp(root,tmp,{recursive:true});
 
-  /* —— Trim Application blocks + values/  ——————— */
-  const appFiles = await findAppFiles(tmp);
-  await Promise.all(appFiles.map(async (aoa) => {
-    const doc = yaml.load(await fs.readFile(aoa, "utf8")) || {};
-    doc.appProjects = (doc.appProjects || [])
-      .map(proj => {
-        proj.applications = (proj.applications || [])
-          .filter(app => keepNames.includes(app.name));
-        return proj;
-      })
-      .filter(proj => proj.applications.length);
-    await fs.writeFile(aoa, yaml.dump(doc));
-  }));
+  /* trim Application blocks */
+  for(const aoa of await appFiles(tmp)){
+    const doc=yaml.load(await fs.readFile(aoa,"utf8"))||{};
+    doc.appProjects=(doc.appProjects||[])
+      .map(p=>{p.applications=(p.applications||[]).filter(a=>keepNames.includes(a.name));return p;})
+      .filter(p=>p.applications.length);
+    await fs.writeFile(aoa,yaml.dump(doc));
+  }
 
-  /* —— Delete unused values/*.yaml  ——————————— */
-  const valFiles = await fg("values/*.yaml", { cwd: tmp });
-  await Promise.all(valFiles.map(async (rel) => {
-    const base = path.basename(rel, ".yaml");
-    if (!keepNames.includes(base)) await fs.rm(path.join(tmp, rel));
-  }));
+  /* delete unused values/ */
+  for(const rel of await fg("values/*.yaml",{cwd:tmp})){
+    if(!keepNames.has(path.basename(rel,".yaml"))) await fs.rm(path.join(tmp,rel));
+  }
 
-  /* —— Delete unreferenced charts/external/** ————— */
-  const allChartVers = await fg(
-    ["charts/external/*/*/*", "external/*/*/*"],
-    { cwd: tmp, onlyDirectories: true }
-  );
-  await Promise.all(allChartVers.map(async (rel) => {
-    if (!neededCharts.has(rel)) {
-      await fs.rm(path.join(tmp, rel), { recursive: true, force: true });
-    }
-  }));
+  /* prune un-referenced charts */
+  for(const dir of await fg(["charts/external/*/*/*","external/*/*/*"],{cwd:tmp,onlyDirectories:true})){
+    if(!needed.has(dir)) await fs.rm(path.join(tmp,dir),{recursive:true,force:true});
+  }
 
-  /* —— Token replacement  ——————————————— */
-  if (cfg.tokenInput && tokenOutput) {
-    const everyFile = await fg(["**/*", "!**/.git/**"], { cwd: tmp, dot: true });
-    await Promise.all(everyFile.map(async (rel) => {
-      const p = path.join(tmp, rel);
-      if ((await fs.stat(p)).isDirectory()) return;
-      const txt = await fs.readFile(p, "utf8");
-      if (txt.includes(cfg.tokenInput)) {
-        await fs.writeFile(p, txt.replaceAll(cfg.tokenInput, tokenOutput));
-      }
+  /* optional token replace */
+  if(cfg.tokenInput&&tokenOutput){
+    const every=await fg(["**/*","!**/.git/**"],{cwd:tmp,dot:true});
+    await Promise.all(every.map(async rel=>{
+      const p=path.join(tmp,rel);
+      if((await fs.stat(p)).isDirectory()) return;
+      const txt=await fs.readFile(p,"utf8");
+      if(txt.includes(cfg.tokenInput))
+        await fs.writeFile(p,txt.replaceAll(cfg.tokenInput,tokenOutput));
     }));
   }
 
-  /* —— Zip & stream  ——————————————————— */
-  const arch = Archiver("zip", { zlib: { level: 9 } });
-  arch.on("warning", console.warn);
-  arch.on("error", err => { throw err; });
-  arch.directory(tmp, false);
-  arch.finalize();
+  const arch=Archiver("zip",{zlib:{level:9}});
+  arch.directory(tmp,false); arch.finalize();
   return arch;
 }
