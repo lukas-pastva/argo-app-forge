@@ -102,10 +102,9 @@ ul{margin:0;padding:0;}
 .app-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 .info-btn{
-.info-btn{
   margin-left:.4rem;
 
-  /* bigger click-target with a nice edge  */
+  /* bigger click-target with a visible edge */
   padding:.25rem .45rem;
   border:2px solid var(--primary);
   border-radius:6px;
@@ -115,19 +114,18 @@ ul{margin:0;padding:0;}
   color:var(--primary);
   cursor:pointer;
 
-  transition:transform .2s,
-             border-color .25s,
-             color .25s,
-             background .25s;
- }
+  transition:
+    transform .2s,
+    border-color .25s,
+    color .25s,
+    background .25s;
+}
 .info-btn:disabled{color:var(--text-light);cursor:default;}
 .info-btn:hover:not(:disabled){
   transform:scale(1.15);
-  background:rgba(0,0,0,.04);               /* subtle hover fill */
+  background:rgba(0,0,0,.04);        /* subtle highlight */
 }
-
 .info-btn:disabled{
-  /* greyed-out look when no metadata is available                */
   color:#777;
   border-color:#c4c8cd;
   background:#f1f3f5;
