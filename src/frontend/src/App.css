@@ -51,12 +51,33 @@ ul{margin:0;padding:0;}
 /* ────────────────────────────────────────────────────────────────
    BUTTONS
    ────────────────────────────────────────────────────────────── */
-.btn,.btn-secondary{
-  padding:.5rem 1.3rem;border:none;border-radius:6px;font-size:.9rem;cursor:pointer;transition:background .25s;
+.btn,
+.btn-secondary{
+  /* a bit taller & wider */
+  padding:.7rem 1.6rem;               
+
+  /* new border all round */
+  border:2px solid transparent;       
+
+  border-radius:6px;
+  font-size:1rem;                     /* bigger text   */
+  cursor:pointer;
+  transition:background .25s, border-color .25s, color .25s;
+ }
+.btn{
+  background:var(--primary);
+  border-color:var(--primary);        /* coloured edge */
+  color:#fff;
 }
-.btn{background:var(--primary);color:#fff;}
 .btn:hover{background:var(--primary-hov);}
-.btn:disabled{opacity:.55;cursor:default;}
+
+/* ── grey-out when disabled ──────────────────────────────── */
+.btn:disabled{
+  background:#c4c8cd;                 /* neutral grey  */
+  border-color:#c4c8cd;
+  color:#666;
+  cursor:default;
+}
 .btn-secondary{background:#e6e9ec;color:var(--text);}
 [data-theme='dark'] .btn-secondary{background:#2f343a;color:var(--text-light);}
 .btn-secondary:hover{background:#d5d9dd;} [data-theme='dark'] .btn-secondary:hover{background:#3b4047;}
