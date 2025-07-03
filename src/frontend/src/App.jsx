@@ -1,32 +1,46 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-/* simple modal for detailed help ------------------------------- */
+/* allowed characters: a-z 0-9 . =  (lower-case only) */
+const NAME_RE = /^[a-z0-9.=]+$/;
+
+/* simple modal with richer help --------------------------------- */
 function HelpModal({ onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-dialog"
-        style={{ width: "64vw", maxWidth: 700 }}
+        style={{ width: "64vw", maxWidth: 720 }}
         onClick={e => e.stopPropagation()}
       >
         <button className="modal-close" onClick={onClose}>×</button>
-        <h2 style={{ marginTop: 0 }}>How to use AppForge</h2>
-        <ol style={{ margin: "0 0 1rem 1.25rem", padding: 0, lineHeight: 1.6 }}>
-          <li>Enter a unique <strong>Name</strong> – this becomes
-              the replacement token <em>and</em> the top-level folder name
-              inside the resulting ZIP.</li>
-          <li>Select the Helm <strong>Applications</strong> you want to keep.</li>
-          <li>Click <em>Download ZIP</em>.  
-              The backend clones your GitOps repo, removes everything else,
-              performs the token replacement, bundles the tailored repo inside
-              a folder named after your input, and streams it back.</li>
-          <li>Unzip and commit / push as you like – no credentials from
-              AppForge ever reach your cluster.</li>
+        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: ".5rem" }}>
+          🚀 How AppForge streamlines onboarding
+        </h2>
+        <p style={{ margin: ".5rem 0 1rem" }}>
+          AppForge is a self-service tool for <strong>accelerating RKE2 cluster
+          onboarding</strong>.  In just a few clicks you receive a fully-trimmed&nbsp;
+          <em>app-of-apps</em> Git repository that’s ready for Argo CD.
+        </p>
+
+        <ol style={{ margin: "0 0 1.2rem 1.2rem", lineHeight: 1.6 }}>
+          <li>🔑 <strong>Name</strong>: supply a lowercase identifier (e.g.
+              <code>staging.eu</code>). It becomes
+              <em>•</em> the replacement token, <em>•</em> the top-level folder
+              inside the ZIP, and <em>•</em> the cluster name used in manifests.</li>
+          <li>📦 <strong>Select apps</strong>: tick only the Helm
+              Applications you want to ship with the cluster.</li>
+          <li>⚙️ <strong>Generate</strong>: hit <em>Download ZIP</em>.
+              AppForge clones your GitOps repo, removes everything else, performs
+              token replacement and bundles the result inside
+              <code>{`<name>/`}</code>.</li>
+          <li>🛠 <strong>Push & deploy</strong>: unzip, commit to your Git
+              provider, and let Argo CD bootstrap the new cluster.</li>
         </ol>
+
         <p style={{ fontSize: ".9rem", color: "var(--text-light)" }}>
-          Need more? Check the README in the project root for environment
-          variables and developer tips.
+          Tip 💡 — No K8s or Docker creds ever leave the container; everything
+          happens in an isolated, ephemeral workspace.
         </p>
       </div>
     </div>
@@ -34,18 +48,29 @@ function HelpModal({ onClose }) {
 }
 
 export default function App() {
-  const [apps, setApps]   = useState([]);      // [{name,icon}]
-  const [sel , setSel ]   = useState(new Set());
-  const [name, setName]   = useState("");      // replacement token
-  const [busy, setBusy]   = useState(false);
-  const [showHelp, setH ] = useState(false);
+  const [apps, setApps]    = useState([]);     // [{name,icon}]
+  const [sel , setSel ]    = useState(new Set());
+  const [name, setName]    = useState("");     // replacement token
+  const [busy, setBusy]    = useState(false);
+  const [showHelp, setH ]  = useState(false);
+  const [err , setErr ]    = useState("");     // validation error
 
   /* load list + default name on mount */
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
-    fetch("/api/defaults").then(r => r.json()).then(d => setName(d.name || ""));
+    fetch("/api/defaults")
+      .then(r => r.json())
+      .then(d => setName(d.name || ""));
   }, []);
 
+  /* validation -------------------------------------------------- */
+  function validate(v) {
+    if (!v.trim()) return "Name is required.";
+    if (!NAME_RE.test(v)) return "Lowercase letters, digits, '.' or '=' only.";
+    return "";
+  }
+
+  /* build ZIP --------------------------------------------------- */
   async function build() {
     setBusy(true);
     const res  = await fetch("/api/build", {
@@ -56,39 +81,55 @@ export default function App() {
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
-    a.href = url;
-    a.download = "appforge.zip";
-    a.click();
+    a.href = url; a.download = "appforge.zip"; a.click();
     URL.revokeObjectURL(url);
     setBusy(false);
   }
 
+  /* handle name change ----------------------------------------- */
+  function onName(e) {
+    const v = e.target.value.toLowerCase();   // force lower
+    setName(v);
+    setErr(validate(v));
+  }
+
+  /* initial validation for default name ------------------------ */
+  useEffect(() => setErr(validate(name)), [name]);
+
+  const canBuild = !busy && sel.size && !err;
+
+  /* render ------------------------------------------------------ */
   return (
     <div className="app-wrapper">
-      {/* floating buttons */}
+      {/* floating help / theme buttons */}
       <button className="help-btn" onClick={() => setH(true)} title="Help">❔</button>
 
-      <h1>AppForge</h1>
+      <h1 style={{ display: "flex", alignItems: "center", gap: ".45rem" }}>
+        ⚡ AppForge
+      </h1>
       <p className="intro">
-        Pick the apps you need, type a replacement&nbsp;name, then download your
-        trimmed GitOps repo as a ready-to-install ZIP.
+        🏗️ This portal is purpose-built for <strong>on-boarding new
+        RKE2 clusters</strong>.  It trims an existing GitOps repository to only
+        the selected Helm apps and produces an <em>app-of-apps</em> bundle in
+        seconds.
       </p>
 
       {/* replacement name input */}
       <label style={{ fontWeight: 600, display: "block", marginBottom: ".4rem" }}>
-        Name
+        Name&nbsp;🔑
       </label>
       <input
         value={name}
-        onChange={e => setName(e.target.value)}
+        onChange={onName}
         style={{
           width: "100%", padding: ".55rem .8rem", fontSize: "1rem",
-          marginBottom: "1.5rem"
+          marginBottom: ".3rem"
         }}
       />
+      {err && <div className="error">{err}</div>}
 
       {/* app selector */}
-      <ul className="apps-list">
+      <ul className="apps-list" style={{ marginBottom: "1.5rem" }}>
         {apps.map(app => (
           <li key={app.name}>
             <label style={{ display: "flex", alignItems: "center", gap: ".6rem" }}>
@@ -112,7 +153,7 @@ export default function App() {
 
       <button
         className="btn"
-        disabled={!sel.size || busy || !name.trim()}
+        disabled={!canBuild}
         onClick={build}
       >
         {busy ? "Building…" : "Download ZIP"}

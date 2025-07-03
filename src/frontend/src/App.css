@@ -7,6 +7,7 @@
   --text-light:    #444;
   --primary:       #0061b0;
   --primary-hover: #004d8a;
+  --error:         #d0392e;
 }
 [data-theme='dark'] {
   --bg:            #12161a;
@@ -16,6 +17,7 @@
   --text-light:    #b0b5bc;
   --primary:       #3b93ff;
   --primary-hover: #2174ff;
+  --error:         #ff6b6b;
 }
 
 /* ---------- RESET ---------- */
@@ -39,6 +41,9 @@ body{background:var(--bg);color:var(--text);transition:background .25s,color .25
 }
 .help-btn:hover{color:var(--primary-hover);}
 
+/* ---------- ERROR TEXT ---------- */
+.error{color:var(--error);font-size:.85rem;margin:.25rem 0 1rem;}
+
 /* ---------- BUTTONS ---------- */
 .btn,.btn-secondary{
   padding:.55rem 1.4rem;border:none;border-radius:6px;font-size:.95rem;
@@ -46,6 +51,7 @@ body{background:var(--bg);color:var(--text);transition:background .25s,color .25
 }
 .btn{background:var(--primary);color:#fff;}
 .btn:hover{background:var(--primary-hover);}
+.btn:disabled{opacity:.55;cursor:default;}
 .btn-secondary{background:#e6e9ec;color:var(--text);}
 [data-theme='dark'] .btn-secondary{background:#2f343a;color:var(--text-light);}
 .btn-secondary:hover{background:#d5d9dd;}[data-theme='dark'] .btn-secondary:hover{background:#3b4047;}
@@ -55,6 +61,7 @@ body{background:var(--bg);color:var(--text);transition:background .25s,color .25
   position:absolute;top:1rem;right:1.4rem;
   font-size:1.25rem;cursor:pointer;color:var(--primary);user-select:none;
 }
+
 
 /* ---------- TABS (changed) ---------- */
 .tabs {
@@ -214,4 +221,5 @@ body.modal-open{overflow:hidden;}
   font-size:.8rem;
   line-height:1.1;
 }
+
 
