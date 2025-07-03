@@ -1,117 +1,97 @@
-# Argo Helm Toggler 🚀
+# AppForge 🚀
 
-A **tiny Git‑based web UI** that lets you add / remove Helm charts in your GitOps
-*app‑of‑apps* repo and trigger an Argo Workflow (or any webhook).  
-One container = React + Express + Helm.
+*A tiny Git‑based **App‑of‑Apps curator** that lets newcomers pick only the
+Helm Applications they really need, performs a repo‑wide token replacement,
+and streams back a **ready‑to‑install ZIP**.*
 
----
-
-## ✨ Features
-
-|  |  |
-|--|--|
-| 🔍 **ArtifactHub search** | type three letters, pick a chart & version (with release date) |
-| ✍️ **YAML diff editor** | only your changes are stored; defaults stay in the chart |
-| 🗂 **Tabs per cluster/env** | each `app‑of‑apps*.yaml` file becomes a tab |
-| 🌑 **Dark / Light / Auto** | theme switch with local persistence |
-| 📅 **Version dates** | see when each chart version was published |
-| 🗑 **One‑click delete** | removes an Application via webhook |
-| 🛠 **Pure Git & Helm** | UI needs **no** K8s credentials |
+One container = React + Express + Git (no K8s credentials required).
 
 ---
 
-## 🚀 Quick start (stand‑alone Docker)
+## ✨ What it does
+
+1. **Clone** a GitOps repository (SSH) — read‑only.  
+2. **List** every Application in the `app-of-apps.yaml` file(s) per cluster/env.  
+3. **Checkbox UI**: pick the apps you want; everything else vanishes.  
+4. **Clean‑up**: removes the corresponding `values/*.yaml` overrides.  
+5. **Token‑replace** across *all* files – handy for cluster‑specific hostnames.  
+6. **Zip & Download** the tailored repo in one click.
+
+---
+
+## 🏃‍♂️ Quick start (Docker)
 
 ```bash
-docker build -t argo-helm-toggler .
+# 1) build
+docker build -t appforge .
 
-docker run -p 8080:8080   -e GIT_REPO_SSH=git@github.com:my-org/argo-apps.git   -e GIT_SSH_KEY="$(cat ~/.ssh/id_ed25519)"   -e WF_WEBHOOK_URL=https://argo.example.com/api/helm-deploy   # optional overrides ⤵
-  -e APPS_GLOB="stage-*.yaml"    argo-helm-toggler
+# 2) run – minimal required envs
+docker run -p 8080:8080   -e GIT_REPO_SSH=git@github.com:my‑org/argo‑apps.git   -e GIT_SSH_KEY="$(cat ~/.ssh/id_ed25519)"   -e TOKEN_REPLACE="mycompany.local => mylab.dev"   appforge
 ```
 
 Open <http://localhost:8080>
 
-> Only a *read‑only* clone is kept inside the UI container – all **writes**
-> happen in the CI job that runs `handle-helm-deploy.sh`.
+> **Nothing is ever pushed upstream.**  
+> All filtering & editing happens inside the container; the end product is a ZIP.
 
 ---
 
 ## 🌡 Environment variables
 
-### Backend container
-
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| **`GIT_REPO_SSH`** | — | GitOps repo to clone (read‑only) |
+| **`GIT_REPO_SSH`** | — | Git repo to clone (read‑only) |
 | `GIT_BRANCH` | `main` | Branch to pull |
 | **`GIT_SSH_KEY`** or `GIT_SSH_KEY_B64` | — | Private key (plain or base64) |
-| **`WF_WEBHOOK_URL`** | — | Deploy webhook URL |
-| `WF_DELETE_WEBHOOK_URL` | `${WF_WEBHOOK_URL}/delete` | Delete webhook |
-| `WF_UPGRADE_WEBHOOK_URL` | `${WF_WEBHOOK_URL}/upgrade` | Upgrade webhook |
-| **`WF_DOWNLOAD_WEBHOOK_URL`** | — | Download-only webhook URL |
-| `WF_TOKEN` | — | Bearer token added to webhooks |
+| **`TOKEN_REPLACE`** | — | Pattern `from => to`, e.g. `example.com => lab.dev` |
 | `PORT` | `8080` | Port UI listens on |
-| `APPS_GLOB` | `app-of-apps*.y?(a)ml` | File-mask for repo scan |
-
-### Helper script `handle-helm-deploy.sh`
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `APPS_DIR` | `clusters` | Base folder for app‑of‑apps files |
-| `VALUES_SUBDIR` | `values` | Overrides sub-folder |
-| `PUSH_BRANCH` | `main` | Branch for Git push |
+| `APPS_GLOB` | `app-of-apps*.ya?ml` | File‑mask for repo scan |
 
 ---
 
-## 🛰 Webhook payloads
+## 🗂 Project layout
 
-### Deploy (POST `WF_WEBHOOK_URL`)
-
-```json
-{
-  "chart": "grafana",
-  "repo":  "https://charts.bitnami.com/bitnami",
-  "version": "7.3.2",
-  "owner": "bitnami",
-  "name": "grafana",     // application / release name
-  "release": "grafana",  // legacy field, same as name
-  "namespace": "monitoring",
-  "userValuesYaml": "..."  // base64‑encoded delta YAML
-}
 ```
-
-### Delete (POST `WF_DELETE_WEBHOOK_URL`)
-
-```json
-{ "release": "grafana", "namespace": "monitoring" }
-```
-
-### Upgrade (POST `WF_UPGRADE_WEBHOOK_URL`)
-
-```json
-{
-  "chart": "grafana",
-  "repo":  "https://charts.bitnami.com/bitnami",
-  "version": "8.2.1",
-  "owner": "bitnami",
-  "release": "grafana",
-  "namespace": "monitoring",
-  "userValuesYaml": "..."  
-}
-```
-
-### Download-only (POST `WF_DOWNLOAD_WEBHOOK_URL`)
-
-```json
-{
-  "chart": "grafana",
-  "repo":  "https://charts.bitnami.com/bitnami",
-  "version": "7.3.2",
-  "owner": "bitnami",
-  "release": "grafana"
-}
+src/
+  backend/         Express API + Git helper
+  frontend/        React + Vite SPA
+  Dockerfile       multi‑stage build (node:20‑alpine)
 ```
 
 ---
 
-© 2025 Argo Helm Toggler • MIT
+## 🔌 REST API (backend)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET /api/files` | list every `app-of-apps*.yaml` |
+| `GET /api/apps?file=…` | flat list of `AppProject.applications[]` |
+| `POST /api/build` | body = `{ selected: [], token: "a => b" }` → streams ZIP |
+
+---
+
+## 🛠 Local development
+
+```bash
+# prerequisites: Node 18+ and pnpm
+pnpm install              # root = mono‑repo
+pnpm --filter backend dev # :8080
+pnpm --filter frontend dev # :5173
+```
+
+The frontend proxies `/api/*` → `:8080`.
+
+---
+
+## 🔒 Security notes
+
+* **Read‑only Git clone** kept in `/tmp/gitops-readonly`  
+  (force‑cleaned on every boot).
+* The resulting ZIP is streamed once, never written to disk.
+* No Helm / Kube config is present inside the container.
+
+---
+
+## © License
+
+MIT — do whatever you want, no warranty, happy hacking!
