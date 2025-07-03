@@ -1,90 +1,36 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-/* allowed characters for NAME input */
-const NAME_RE = /^[a-z0-9.=]+$/;
+/* simple helper for selecting / deselecting all */
+const allNames = (arr) => new Set(arr.map((a) => a.name));
 
-/* ------------------------------------------------------------------ */
-/*  Help modal – right-side pane                                      */
-/* ------------------------------------------------------------------ */
-function HelpModal({ onClose }) {
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>×</button>
-
-        <h2 style={{ marginTop: 0, marginBottom: ".8rem",
-                     display: "flex", alignItems: "center", gap: ".6rem" }}>
-          🚀 AppForge onboarding guide
-        </h2>
-
-        <p style={{ marginBottom: "1.5rem", lineHeight: 1.6 }}>
-          AppForge speeds up <strong>RKE2 cluster onboarding</strong> by
-          producing a trimmed, token-replaced&nbsp;
-          <em>app-of-apps</em> Git repository – ready for Argo CD – in seconds.
-        </p>
-
-        <ol style={{ marginLeft: "1.1rem", lineHeight: 1.75, fontSize: ".97rem" }}>
-          <li>🔑 <strong>Name</strong>: enter a lowercase token (e.g.&nbsp;
-              <code>staging.eu</code>). It becomes the replacement string and
-              the root folder inside the ZIP.</li>
-          <li>📦 <strong>Select apps</strong>: tick the Helm Applications to
-              ship with the cluster. Use the <em>Select all</em>/<em>Clear all</em>
-              shortcuts for speed.</li>
-          <li>🛠 <strong>Download ZIP</strong>: AppForge clones your GitOps
-              repo, prunes unselected apps, performs token replacement and
-              bundles the result under <code>&lt;name&gt;/</code>.</li>
-          <li>🚚 <strong>Commit & deploy</strong>: push the folder to Git and
-              let Argo CD bootstrap the cluster.</li>
-        </ol>
-
-        <p style={{ marginTop: "1.2rem", fontSize: ".92rem",
-                    color: "var(--text-light)" }}>
-          💡  Everything runs in an isolated container; no Kubernetes
-          credentials ever leave the environment.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Main component                                                    */
-/* ------------------------------------------------------------------ */
 export default function App() {
-  const [apps, setApps]   = useState([]);          // [{name,icon,desc}]
-  const [sel , setSel ]   = useState(new Set());   // selected names
+  const [apps, setApps]   = useState([]);          // [{name,icon,desc?}]
+  const [sel , setSel ]   = useState(new Set());
   const [name, setName]   = useState("");          // replacement token
   const [busy, setBusy]   = useState(false);
   const [showHelp, setH ] = useState(false);
-  const [err , setErr ]   = useState("");
+  const [tried, setTry  ] = useState(false);       // form attempted?
 
-  /* fetch list + default name on mount */
+  /* ── fetch list + default name on mount ────────────────────── */
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
     fetch("/api/defaults").then(r => r.json()).then(d => setName(d.name || ""));
   }, []);
 
-  /* validate name ------------------------------------------------ */
-  function validate(v) {
-    if (!v.trim()) return "Name is required.";
-    if (!NAME_RE.test(v)) return "Lowercase letters, digits, '.' or '=' only.";
-    return "";
+  /* ── helpers ──────────────────────────────────────────────── */
+  const error = tried && !name.trim();
+
+  function toggle(item) {
+    const next = new Set(sel);
+    next.has(item) ? next.delete(item) : next.add(item);
+    setSel(next);
   }
-  useEffect(() => setErr(validate(name)), [name]);
 
-  /* helpers ------------------------------------------------------ */
-  const toggle = (n) => {
-    const s = new Set(sel);
-    s.has(n) ? s.delete(n) : s.add(n);
-    setSel(s);
-  };
-  const selectAll   = () => setSel(new Set(apps.map(a => a.name)));
-  const clearAll    = () => setSel(new Set());
-  const canBuild    = !busy && sel.size && !err;
-
-  /* build ZIP ---------------------------------------------------- */
   async function build() {
+    setTry(true);
+    if (!name.trim()) return;
+
     setBusy(true);
     const res  = await fetch("/api/build", {
       method : "POST",
@@ -99,67 +45,106 @@ export default function App() {
     setBusy(false);
   }
 
-  /* render ------------------------------------------------------- */
+  /* ── modal component ───────────────────────────────────────── */
+  function HelpModal() {
+    return (
+      <div className="modal-overlay" onClick={() => setH(false)}>
+        <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
+          <button className="modal-close" onClick={() => setH(false)}>×</button>
+          <h2>Help &nbsp;📘</h2>
+          <p>
+            <strong>AppForge</strong> packages exactly the selection you make
+            below into a ready-to-apply GitOps repository:
+          </p>
+          <ul style={{ margin: ".8rem 0 1.4rem 1.2rem", lineHeight: "1.6" }}>
+            <li>clones the upstream Argo CD <em>app-of-apps</em> repo</li>
+            <li>keeps only the Applications you tick</li>
+            <li>replaces every occurrence of the token with the <em>Name</em> you enter</li>
+            <li>streams the result as a single ZIP archive</li>
+          </ul>
+          <p>
+            Use it when rolling out a **new RKE2 cluster** – you’ll get a trimmed
+            repo that can be pushed to your Git server or used as a one-off
+            payload for <code>argocd app create …</code>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── render ───────────────────────────────────────────────── */
   return (
     <div className="app-wrapper">
-      {/* floating UI icons */}
-      <button className="help-btn" onClick={() => setH(true)} title="Help">❔</button>
+      {/* floating controls */}
+      <button className="help-btn" onClick={() => setH(true)}>ℹ️ Help</button>
 
-      <h1 style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
-        ⚡ AppForge
-      </h1>
-
+      {/* heading + intro */}
+      <h1>AppForge</h1>
       <p className="intro">
-        🏗️ Use this portal to generate an <em>app-of-apps</em> repo for new
-        RKE2 clusters in one click.
+        This tool streamlines onboarding of **new RKE2 clusters**. Choose the
+        components you want and generate a pre-filled&nbsp;
+        <em>app-of-apps</em> GitOps repository in seconds.
       </p>
 
-      {/* ---- name input ---- */}
-      <label style={{ fontWeight: 600, display: "block", marginBottom: ".4rem" }}>
-        Name 🔑
-      </label>
-      <input
-        value={name}
-        onChange={e => { const v = e.target.value.toLowerCase(); setName(v); setErr(validate(v)); }}
-        style={{ width: "100%", padding: ".55rem .8rem", fontSize: "1rem", marginBottom: ".35rem" }}
-      />
-      {err && <div className="error">{err}</div>}
-
-      {/* ---- bulk select actions ---- */}
-      <div className="apps-actions">
-        <button className="btn-secondary" onClick={selectAll}>Select all</button>
-        <button className="btn-secondary" onClick={clearAll}>Clear all</button>
+      {/* Name field + Download button */}
+      <div style={{ display:"flex",alignItems:"flex-end",gap:"1.2rem" }}>
+        <div style={{ flex:1 }}>
+          <label>Name</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value.toLowerCase())}
+            style={{ width:"100%",padding:".55rem .9rem",fontSize:"1rem" }}
+          />
+          {error && <div className="error">Name is required.</div>}
+        </div>
+        <button
+          className="btn"
+          disabled={busy || !sel.size}
+          onClick={build}
+          style={{ whiteSpace:"nowrap" }}
+        >
+          {busy ? "Building…" : "Download ZIP"}
+        </button>
       </div>
 
-      {/* ---- app selector ---- */}
-      <ul className="apps-list" style={{ marginBottom: "1.6rem" }}>
+      {/* bulk-select helpers */}
+      <div className="apps-actions">
+        <button className="btn" onClick={() => setSel(allNames(apps))}>
+          Select all
+        </button>
+        <button className="btn-secondary" onClick={() => setSel(new Set())}>
+          Deselect all
+        </button>
+      </div>
+
+      {/* explanatory subtitle */}
+      <p className="apps-header">
+        Please select which apps you want to be installed on the&nbsp;RKE2 cluster:
+      </p>
+
+      {/* app grid */}
+      <ul className="apps-list">
         {apps.map(app => (
-          <li key={app.name}>
-            <div
-              className="app-item"
-              title={app.desc || ""}
-              onClick={() => toggle(app.name)}
-            >
-              <input
-                type="checkbox"
-                checked={sel.has(app.name)}
-                readOnly
-              />
-              {app.icon
-                ? <img src={app.icon} alt="" />
-                : <span style={{ fontSize: "1.1rem" }}>📦</span>}
-              {app.name}
-            </div>
+          <li
+            key={app.name}
+            className="app-item"
+            onClick={() => toggle(app.name)}
+            title={app.desc || app.name}
+          >
+            <input
+              type="checkbox"
+              checked={sel.has(app.name)}
+              readOnly
+            />
+            {app.icon
+              ? <img src={app.icon} alt="" />
+              : <span style={{ fontSize:"1.1rem" }}>📦</span>}
+            <span className="name">{app.name}</span>
           </li>
         ))}
       </ul>
 
-      {/* ---- build button ---- */}
-      <button className="btn" disabled={!canBuild} onClick={build}>
-        {busy ? "Building…" : "Download ZIP"}
-      </button>
-
-      {showHelp && <HelpModal onClose={() => setH(false)} />}
+      {showHelp && <HelpModal />}
     </div>
   );
 }

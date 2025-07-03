@@ -38,13 +38,13 @@ body{
    INTRO + HELP
    ────────────────────────────────────────────────────────────── */
 .intro{margin:.2rem 0 1.4rem;font-size:1rem;color:var(--text-light);}
+.apps-header{font-weight:600;margin:1.3rem 0 .9rem;}
 .help-btn{
-  position:absolute;top:1rem;left:1.4rem;font-size:1.35rem;
-  background:none;border:none;cursor:pointer;color:var(--primary);
+  position:absolute;top:1rem;right:4rem;display:flex;align-items:center;
+  gap:.35rem;font-size:.95rem;background:none;border:none;cursor:pointer;
+  color:var(--primary);user-select:none;
 }
 .help-btn:hover{color:var(--primary-hover);}
-
-/* help pane (modal variant – anchored to top-right) */
 .modal-dialog.help{
   border:1px solid var(--border);border-radius:12px;background:var(--card-bg);
   width:72vw;max-width:900px;margin:4vh 4vw 0 auto;padding:2rem 2.4rem;
@@ -53,7 +53,7 @@ body{
 /* ────────────────────────────────────────────────────────────────
    VALIDATION / ERROR
    ────────────────────────────────────────────────────────────── */
-.error{color:var(--error);font-size:.85rem;margin:.25rem 0 1rem;}
+.error{color:var(--error);font-size:.85rem;margin:.3rem 0 1rem;}
 
 /* ────────────────────────────────────────────────────────────────
    ACTION BUTTONS
@@ -65,22 +65,21 @@ body{
 .btn{background:var(--primary);color:#fff;}
 .btn:hover{background:var(--primary-hover);}
 .btn:disabled{opacity:.55;cursor:default;}
-
 .btn-secondary{background:#e6e9ec;color:var(--text);}
 [data-theme='dark'] .btn-secondary{background:#2f343a;color:var(--text-light);}
 .btn-secondary:hover{background:#d5d9dd;}
 [data-theme='dark'] .btn-secondary:hover{background:#3b4047;}
 
-/* bulk-select buttons (Select all / Deselect all) */
-.apps-actions{display:flex;gap:.6rem;margin:.4rem 0 1rem;}
-.apps-actions .btn{padding:.4rem 1rem;font-size:.9rem;}
+/* bulk-select + download buttons */
+.apps-actions{display:flex;gap:.8rem;margin:.4rem 0 1.2rem;}
+.apps-actions .btn{padding:.45rem 1.1rem;font-size:.9rem;}
 
 /* ────────────────────────────────────────────────────────────────
    PROJECT-GROUP  (one block per env/cluster)
    ────────────────────────────────────────────────────────────── */
 .project-group{
   border:1px solid var(--border);border-radius:10px;
-  margin-bottom:1.7rem;padding:1.2rem 1.5rem;background:var(--card-bg);
+  margin-bottom:1.7rem;padding:1.25rem 1.5rem;background:var(--card-bg);
   transition:background .25s;
 }
 .project-group h3{margin:0 0 1rem;font-size:1.15rem;color:var(--primary);}
@@ -89,7 +88,8 @@ body{
    APP SELECTION GRID
    ────────────────────────────────────────────────────────────── */
 .apps-list{
-  display:grid;gap:.9rem;
+  list-style:none;padding-left:0;
+  display:grid;gap:.95rem;
   grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
 }
 .app-item{
@@ -134,7 +134,7 @@ body{
 }
 
 /* ────────────────────────────────────────────────────────────────
-   SEARCH (ChartSearch component)
+   SEARCH  (ChartSearch component)
    ────────────────────────────────────────────────────────────── */
 .search-box{display:flex;gap:.8rem;margin-bottom:1rem;}
 .search-input{
