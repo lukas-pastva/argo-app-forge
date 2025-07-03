@@ -19,7 +19,13 @@ const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo
 
 /* grab meta from a local chart dir */
 async function chartMeta(root, chartRel){
-  const dir   = path.join(root, chartRel);
+  let   dir   = path.join(root, chartRel);
+
+  // if Chart.yaml missing and we’re inside “external/…”, try “charts/external/…”
+  if (!await exists(path.join(dir, "Chart.yaml")) &&
+      chartRel.startsWith("external/")) {
+    dir = path.join(root, "charts", chartRel);
+  }
   const files = await fg(["Chart.yaml","chart.yaml"],{cwd:dir,absolute:true});
   if(!files.length) return {};                          // no Chart.yaml -> no meta
 
