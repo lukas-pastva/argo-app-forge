@@ -21,26 +21,6 @@ One container = React + Express + Git (no K8s credentials required).
 
 ---
 
-## 🏃‍♂️ Quick start (Docker)
-
-```bash
-# 1) build
-docker build -t appforge .
-
-# 2) run – minimal required envs
-docker run -p 8080:8080 \
-  -e GIT_REPO_SSH=git@github.com:my‑org/argo‑apps.git \
-  -e REPO_TOKEN_INPUT="__REPO_URL__" \
-  -e DOMAIN_TOKEN_INPUT="__DOMAIN__" \
-  appforge
-```
-
-Open <http://localhost:8080>
-
-> **Nothing is ever pushed upstream.**  
-> All filtering & editing happens inside the container; the end product is a ZIP.
-
----
 
 ## 🌡 Environment variables
 
@@ -76,19 +56,6 @@ src/
 | `GET /api/files` | list every `app-of-apps*.yaml` |
 | `GET /api/apps?file=…` | flat list of `AppProject.applications[]` |
 | `POST /api/build` | body = `{ selected: [], repo:"", domain:"" }` → streams ZIP |
-
----
-
-## 🛠 Local development
-
-```bash
-# prerequisites: Node 18+ and pnpm
-pnpm install              # root = mono‑repo
-pnpm --filter backend dev # :8080
-pnpm --filter frontend dev # :5173
-```
-
-The frontend proxies `/api/*` → `:8080`.
 
 ---
 
