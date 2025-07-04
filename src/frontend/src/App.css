@@ -40,9 +40,9 @@ ul{margin:0;padding:0;}
    TOP BAR
    ────────────────────────────────────────────────────────────── */
 .top-row{display:flex;gap:1.3rem;align-items:flex-end;margin-bottom:1.4rem;}
-.name-field{flex:1;}
-.name-field label{display:block;font-weight:600;margin-bottom:.3rem;}
-.name-field input{
+.field{flex:1;}
+.field label{display:block;font-weight:600;margin-bottom:.3rem;}
+.field input{
   width:100%;padding:.55rem .9rem;font-size:1rem;border:1px solid var(--border);border-radius:6px;
 }
 .error{color:var(--error);font-size:.85rem;margin:.25rem 0 .6rem;}

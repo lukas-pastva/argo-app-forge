@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-const VALID_RE = /^[a-z0-9.=]+$/;
+const REPO_RE = /^git@[^:]+:[^/]+\/[^/]+\.git$/i;
+const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
 /* helper: Set from array of objects -------- */
 const toSet = arr => new Set(arr.map(o => o.name));
 
 export default function App() {
-  const [apps,   setApps]   = useState([]);          // [{name,icon,desc,maint,home,readme}]
+  const [apps,   setApps]   = useState([]);          // [{name,icon,desc,…}]
   const [sel,    setSel]    = useState(new Set());   // selected app names
   const [open,   setOpen]   = useState(new Set());   // info-panes open
-  const [name,   setName]   = useState("");
+  const [repo,   setRepo]   = useState("");
+  const [domain, setDomain] = useState("");
   const [tried,  setTried]  = useState(false);
   const [busy,   setBusy]   = useState(false);
   const [help,   setHelp]   = useState(false);
@@ -18,14 +20,22 @@ export default function App() {
   /* ── fetch data once ───────────────────── */
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
-    fetch("/api/defaults").then(r => r.json()).then(d => setName((d.name || "").trim().toLowerCase()));
+    fetch("/api/defaults").then(r => r.json()).then(d => {
+      setRepo((d.repo   || "").trim());
+      setDomain((d.domain || "").trim().toLowerCase());
+    });
   }, []);
 
   /* ── validation helpers ────────────────── */
-  const valid = !!name && VALID_RE.test(name);
-  const err   = tried && !valid
-    ? (!name ? "Name is required." : "Only lower-case letters, digits, '.' and '=' allowed.")
-    : "";
+  const repoOK   = REPO_RE.test(repo.trim());
+  const domainOK = DOMAIN_RE.test(domain.trim());
+  const valid    = repoOK && domainOK;
+
+  let errRepo="", errDomain="";
+  if(tried){
+    if(!repoOK)   errRepo   = "Valid SSH repo (git@host:org/repo.git) required.";
+    if(!domainOK) errDomain = "Valid domain required.";
+  }
 
   /* ── actions ───────────────────────────── */
   const toggleSel  = n => { const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
@@ -38,11 +48,11 @@ export default function App() {
     const res  = await fetch("/api/build", {
       method : "POST",
       headers: { "Content-Type": "application/json" },
-      body   : JSON.stringify({ selected:[...sel], name })
+      body   : JSON.stringify({ selected:[...sel], repo:repo.trim(), domain:domain.trim().toLowerCase() })
     });
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), { href:url, download:"appforge.zip" }).click();
+    Object.assign(document.createElement("a"), { href:url, download:`${domain || "appforge"}.zip` }).click();
     URL.revokeObjectURL(url);
     setBusy(false);
   }
@@ -76,14 +86,24 @@ export default function App() {
 
       {/* top bar */}
       <div className="top-row">
-        <div className="name-field">
-          <label>Name</label>
+        <div className="field">
+          <label>Git repository (SSH)</label>
           <input
-            value={name}
-            onChange={e => setName(e.target.value.toLowerCase().trim())}
-            placeholder="my-cluster.example.com"
+            value={repo}
+            onChange={e => setRepo(e.target.value)}
+            placeholder="git@github.com:org/repo.git"
           />
-          {err && <div className="error">{err}</div>}
+          {errRepo && <div className="error">{errRepo}</div>}
+        </div>
+
+        <div className="field">
+          <label>Main domain</label>
+          <input
+            value={domain}
+            onChange={e => setDomain(e.target.value.toLowerCase().trim())}
+            placeholder="example.com"
+          />
+          {errDomain && <div className="error">{errDomain}</div>}
         </div>
 
         <button

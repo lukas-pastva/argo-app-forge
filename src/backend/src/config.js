@@ -16,13 +16,13 @@ export default {
   /* ── Backend behaviour ─────────────────────────────────────── */
   appsGlob  : process.env.APPS_GLOB || "app-of-apps*.y?(a)ml",
 
-  /* ── Token replacement (NEW) ───────────────────────────────── */
-  /** what to search for (e.g. "example.com")                     */
-  tokenInput: process.env.TOKEN_REPLACE || "",
-  /** default replacement shown in the UI; editable by the user   */
-  nameDefault: process.env.DEFAULT_NAME || "",
+  /* ── Token replacement (multi) ─────────────────────────────── */
+  repoTokenInput  : process.env.REPO_TOKEN_INPUT   || "",
+  domainTokenInput: process.env.DOMAIN_TOKEN_INPUT || "",
+  repoDefault     : process.env.DEFAULT_REPO       || "",
+  domainDefault   : process.env.DEFAULT_DOMAIN     || "",
 
-  /* ── Webhook URLs (must all be set if you use them) ────────── */
+  /* ── Webhook URLs (optional) ───────────────────────────────── */
   webhookUrl        : process.env.WF_WEBHOOK_URL,
   deleteWebhookUrl  : process.env.WF_DELETE_WEBHOOK_URL,
   upgradeWebhookUrl : process.env.WF_UPGRADE_WEBHOOK_URL,

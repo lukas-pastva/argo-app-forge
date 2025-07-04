@@ -1,8 +1,7 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
-    • listApps()        → returns rich meta (icon, desc, maint, home, readme)
+    • listApps()        → returns rich meta (icon, desc, …)
     • buildZip()        → prunes charts/external to only referenced paths
-    • helper chartMeta  – far more robust (case-insensitive Chart.yaml, etc.)
 */
 
 import fs       from "fs/promises";
@@ -13,9 +12,10 @@ import Archiver from "archiver";
 import { ensureRepo } from "./git.js";
 import cfg      from "./config.js";
 
-/* ── helper utils ────────────────────────────────────────────── */
+/* ── helpers ─────────────────────────────────────────────────── */
 async function exists(p){ try{ await fs.access(p); return true; }catch{return false;} }
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
+
 
 /* grab meta from a local chart dir */
 async function chartMeta(root, chartRel){
@@ -128,20 +128,28 @@ export async function buildZip(keepNames, tokenOutput=cfg.nameDefault){
   for(const d of await fg(["charts/external/*/*/*","external/*/*/*"],{cwd:tmp,onlyDirectories:true}))
     if(!needed.has(d)) await fs.rm(path.join(tmp,d),{recursive:true,force:true});
 
-  /* token replace (optional) */
-  if(cfg.tokenInput && tokenOutput){
+  /* multi-token replacement ------------------------------------ */
+  const replacements=[];
+  if(cfg.repoTokenInput   && repoReplace)   replacements.push([cfg.repoTokenInput,   repoReplace]);
+  if(cfg.domainTokenInput && domainReplace) replacements.push([cfg.domainTokenInput, domainReplace]);
+
+  if(replacements.length){
     const every=await fg(["**/*","!**/.git/**"],{cwd:tmp,dot:true});
     await Promise.all(every.map(async rel=>{
       const p=path.join(tmp,rel);
       if((await fs.stat(p)).isDirectory()) return;
-      const txt=await fs.readFile(p,"utf8");
-      if(txt.includes(cfg.tokenInput))
-        await fs.writeFile(p,txt.replaceAll(cfg.tokenInput,tokenOutput));
+      let txt=await fs.readFile(p,"utf8");
+      let changed=false;
+      for(const [from,to] of replacements){
+        if(txt.includes(from)){ txt=txt.split(from).join(to); changed=true; }
+      }
+      if(changed) await fs.writeFile(p,txt);
     }));
   }
 
-  /* stream ZIP */
+  /* stream ZIP – root folder = main domain (if provided) */
   const arch=Archiver("zip",{zlib:{level:9}});
-  arch.directory(tmp,false); arch.finalize();
+  arch.directory(tmp, domainReplace || false);
+  arch.finalize();
   return arch;
 }
