@@ -59,7 +59,10 @@ function CopyBtn({ text, children="⧉", className="tiny-btn", onCopied }){
 
 /* one-liner helpers --------------------------------------- */
 const oneLiner = (n,body)=>[
-  `cat <<"EOF" > ${n}`, body.trimEnd(), "EOF", `sudo bash ${n}`
+  `cat <<"EOF" > ${n}`,
+  body.trimEnd(),
+  "EOF",
+  `sudo bash ${n}`
 ].join("\n");
 const oneLinerSecrets = (n,body,priv)=>[
   `export ARGOCD_PASS="${priv.argocd}"`,
@@ -140,8 +143,8 @@ export default function App(){
 
   /* script helpers ----------------------------------------- */
   const getFile        = n=>fetch(`/scripts/${n}`).then(r=>r.text());
-  const copyFile       = async n => copyText(await getFile(n)).then(()=>toast("Copied!"));
-  const copyPlain      = async n => copyText(oneLiner(n,await getFile(n))).then(()=>toast("Copied!"));
+  const copyFile       = async n => { await copyText(await getFile(n)); toast("Copied!"); };
+  const copyPlain      = async n => { await copyText(oneLiner(n,await getFile(n))); toast("Copied!"); };
   const copySecretLn   = async n => {
     const body=await getFile(n);
     const txt=oneLinerSecrets(n,body,{...pwds,ssh:keys?.privateKey||""});
@@ -282,7 +285,7 @@ export default function App(){
         }
       </>;
 
-      /* 8 – Scripts (updated buttons) ---------------------- */
+      /* 8 – Scripts ---------------------------------------- */
       case 8: return <>
         <h2>Step 8 – Helper scripts</h2><Intro i={8}/>
         {busyScp
@@ -290,18 +293,15 @@ export default function App(){
           : <table className="scripts-table">
               <tbody>
                 {scripts.map(s=>{
-                  const btnBox={display:"flex",gap:".5rem",flexWrap:"wrap"};
+                  const box={display:"flex",gap:".5rem",flexWrap:"wrap"};
                   return(
                     <tr key={s}>
                       <td><code>{s}</code></td>
-                      <td style={btnBox}>
+                      <td style={box}>
                         <a className="tiny-btn" href={`/scripts/${s}`} download>Download</a>
-                        <CopyBtn text=""       className="tiny-btn"
-                                 onCopied={()=>{}}                            /* filled later */ />
-                        <CopyBtn text=""       className="tiny-btn"
-                                 onCopied={()=>{}} />
-                        <CopyBtn text=""       className="tiny-btn"
-                                 onCopied={()=>{}} />
+                        <CopyBtn text="" className="tiny-btn" onCopied={()=>{ copyFile(s); }}/> {/* fill dynamically */}
+                        <CopyBtn text="" className="tiny-btn" onCopied={()=>{ copyPlain(s); }}/>
+                        <CopyBtn text="" className="tiny-btn" onCopied={()=>{ copySecretLn(s); }}/>
                       </td>
                     </tr>
                   );
@@ -311,10 +311,9 @@ export default function App(){
         <Nav/>
       </>;
 
-      /* 9 – Overview (hover tweak) -------------------------- */
+      /* 9 – Overview -------------------------------------- */
       default: return <>
         <h2>Step 9 – Overview 🎉</h2><Intro i={9}/>
-        {/* dark-mode hover patch */}
         <style>{`[data-theme='dark'] .summary-table tr:hover{background:#2d333b !important;}`}</style>
         <table className="summary-table">
           <tbody>
