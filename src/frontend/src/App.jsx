@@ -14,23 +14,22 @@ const genPass   = () => rand();
 
 /* ── step metadata ─────────────────────────────────────────── */
 const steps = [
-  { label:"Welcome",     desc:"Quick tour of what AppForge will do." },
-  { label:"Domain",      desc:"Domain name substituted into manifests." },
-  { label:"Repo",        desc:"SSH URL of your Git repo with manifests." },
-  { label:"Apps",        desc:"Pick only the Helm apps you need." },
-  { label:"ZIP",         desc:"Download a trimmed, token-replaced ZIP." },
-  { label:"Create repo", desc:"Create (or empty) that Git repository." },
-  { label:"Secrets",     desc:"Generate SSH keys, Rancher token & admin passwords." },
-  { label:"Deploy key",  desc:"Add the public SSH key as a repo deploy key." },
-  { label:"SSH VMs",     desc:"SSH onto each VM that will join the RKE2 cluster." },
-  { label:"Scripts",     desc:"Copy helper install scripts and run them on the nodes." },
-  { label:"Overview",    desc:"Everything in one place – copy & save for later." }
+  { label:"Welcome",      desc:"Quick tour of what AppForge will do." },
+  { label:"Domain",       desc:"Domain name substituted into manifests." },
+  { label:"Repo",         desc:"SSH URL of your Git repo with manifests." },
+  { label:"Apps",         desc:"Pick only the Helm apps you need." },
+  { label:"ZIP + Repo",   desc:"Download the tailored ZIP, create the repo and push the files." },
+  { label:"Secrets",      desc:"Generate SSH keys, Rancher token & admin passwords." },
+  { label:"Deploy key",   desc:"Add the public SSH key as a repo deploy key." },
+  { label:"SSH VMs",      desc:"SSH onto each VM that will join the RKE2 cluster." },
+  { label:"Scripts",      desc:"Copy helper install scripts and run them on the nodes." },
+  { label:"Overview",     desc:"Everything in one place – copy & save for later." }
 ];
 
-/* ──────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────── */
 export default function App(){
 
-  /* ── state ──────────────────────────────────────────────── */
+  /* ── state ─────────────────────────────────────────────── */
   const [domain,setDomain]   = useState("");
   const [repo,setRepo]       = useState("");
   const [apps,setApps]       = useState([]);
@@ -49,7 +48,7 @@ export default function App(){
   const [busyKey,setBusyKey] = useState(false);
   const [busyScp,setBusyScp] = useState(false);
 
-  /* toast --------------------------------------------------- */
+  /* toast -------------------------------------------------- */
   const [msg,setMsg] = useState("");
   const toast = t => { setMsg(t); setTimeout(()=>setMsg(""),toastDur); };
 
@@ -61,7 +60,7 @@ export default function App(){
   const copyBtn = (val,cls="action-btn") =>
     <button className={cls} onClick={()=>copy(val,cls)}>⧉</button>;
 
-  /* one-liner helpers -------------------------------------- */
+  /* one-liner helpers ------------------------------------- */
   const oneLiner = (n,body) => [
     `cat <<"EOF" > ${n}`,
     body.trimEnd(),
@@ -83,19 +82,19 @@ export default function App(){
     oneLiner(n,body)
   ].join("\n");
 
-  /* ── bootstrap ─────────────────────────────────────────── */
+  /* ── bootstrap ────────────────────────────────────────── */
   useEffect(()=>{ fetch("/api/apps").then(r=>r.json()).then(setApps); },[]);
 
-  /* scripts list pre-fetch (only on step 9) ----------------- */
+  /* scripts list pre-fetch (only on step 8) ---------------- */
   useEffect(()=>{
-    if (step!==9 || scripts.length || busyScp) return;
+    if (step!==8 || scripts.length || busyScp) return;
     setBusyScp(true);
     fetch("/api/scripts").then(r=>r.json()).then(setScripts).finally(()=>setBusyScp(false));
   },[step,scripts.length,busyScp]);
 
-  /* generate secrets when entering step 6 ------------------- */
+  /* generate secrets when entering step 5 ------------------ */
   useEffect(()=>{
-    if (step!==6) return;
+    if (step!==5) return;
     if (!keys && !busyKey){
       setBusyKey(true);
       fetch("/api/ssh-keygen").then(r=>r.json()).then(setKeys).finally(()=>setBusyKey(false));
@@ -104,16 +103,16 @@ export default function App(){
     if (!pwds)  setPwds({ argocd:genPass(), keycloak:genPass(), rancher:genPass() });
   },[step,keys,busyKey,token,pwds]);
 
-  /* validations -------------------------------------------- */
+  /* validations ------------------------------------------- */
   const domainOK   = DOMAIN_RE.test(domain.trim());
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size>0;
   const canZip     = domainOK && repoOK && appsChosen;
 
-  /* auto-download ZIP on step 4 ----------------------------- */
+  /* auto-download ZIP on step 4 ---------------------------- */
   useEffect(()=>{ if(step===4 && canZip) buildZip(); },[step,canZip]);
 
-  /* togglers ------------------------------------------------ */
+  /* togglers ---------------------------------------------- */
   const toggleSel  = n => { const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
   const toggleOpen = n => { const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
 
@@ -122,7 +121,7 @@ export default function App(){
     fetch("/api/ssh-keygen").then(r=>r.json()).then(setKeys).finally(()=>setBusyKey(false));
   };
 
-  /* build ZIP ---------------------------------------------- */
+  /* build ZIP --------------------------------------------- */
   async function buildZip(){
     if (busyZip) return;
     setBusyZip(true);
@@ -142,16 +141,14 @@ export default function App(){
     setBusyZip(false);
   }
 
-  /* helper to copy complete inline script ------------------ */
-  const copyInline = async n =>{
-    const body = await fetch(`/scripts/${n}`).then(r=>r.text());
-    copy(inlineWithSecrets(n,body));
-  };
+  /* helpers to copy inline script ------------------------- */
+  const copyScript   = async n => copy(await fetch(`/scripts/${n}`).then(r=>r.text()));
+  const copyInline   = async n => copy(inlineWithSecrets(n,await fetch(`/scripts/${n}`).then(r=>r.text())));
 
-  /* shared intro line -------------------------------------- */
+  /* shared intro line ------------------------------------- */
   const Intro = ({i}) => <p className="intro">{steps[i].desc}</p>;
 
-  /* nav buttons -------------------------------------------- */
+  /* nav buttons ------------------------------------------- */
   const Nav = ({nextOK=true})=>(
     <div style={{marginTop:"1rem"}}>
       <button className="btn-secondary" onClick={()=>setStep(step-1)}>← Back</button>
@@ -159,11 +156,11 @@ export default function App(){
     </div>
   );
 
-  /* ── STEP RENDERER ─────────────────────────────────────── */
+  /* ── STEP RENDERER ────────────────────────────────────── */
   function renderStep(){
     switch(step){
 
-      /* 0 ─ Welcome ---------------------------------------- */
+      /* 0 ─ Welcome --------------------------------------- */
       case 0: return <>
         <h2>Welcome to AppForge 🚀</h2>
         <Intro i={0}/>
@@ -173,7 +170,7 @@ export default function App(){
         <button className="btn" onClick={()=>setStep(1)}>Start →</button>
       </>;
 
-      /* 1 ─ Domain ----------------------------------------- */
+      /* 1 ─ Domain ---------------------------------------- */
       case 1: return <>
         <h2>Step 1 – Main domain</h2>
         <Intro i={1}/>
@@ -185,7 +182,7 @@ export default function App(){
         <button className="btn" disabled={!domainOK} onClick={()=>setStep(2)}>Next →</button>
       </>;
 
-      /* 2 ─ Repo ------------------------------------------- */
+      /* 2 ─ Repo ------------------------------------------ */
       case 2: return <>
         <h2>Step 2 – Git repository (SSH)</h2>
         <Intro i={2}/>
@@ -197,7 +194,7 @@ export default function App(){
         <Nav nextOK={repoOK}/>
       </>;
 
-      /* 3 ─ Apps ------------------------------------------- */
+      /* 3 ─ Apps ------------------------------------------ */
       case 3: return <>
         <h2>Step 3 – Choose applications</h2>
         <Intro i={3}/>
@@ -233,29 +230,25 @@ export default function App(){
         <Nav nextOK={appsChosen}/>
       </>;
 
-      /* 4 ─ ZIP -------------------------------------------- */
+      /* 4 ─ ZIP + repo ------------------------------------ */
       case 4: return <>
-        <h2>Step 4 – Download tailored ZIP</h2>
+        <h2>Step 4 – Download ZIP & create repo</h2>
         <Intro i={4}/>
-        <p>The ZIP download should start automatically. If it doesn’t, click the button below.</p>
+        <p>
+          1. Click <strong>Download ZIP</strong> (auto-starts).<br/>
+          2. Create / empty the Git repository.<br/>
+          3. Unzip the archive and push **all files to the <code>main</code> branch**.
+        </p>
         <button className="btn" disabled={busyZip||!canZip} onClick={buildZip}>
           {busyZip ? <Spinner size={18}/> : "Download ZIP"}
         </button>
         <Nav/>
       </>;
 
-      /* 5 ─ Create repo ------------------------------------ */
+      /* 5 ─ Secrets --------------------------------------- */
       case 5: return <>
-        <h2>Step 5 – Create the app-of-apps repo</h2>
+        <h2>Step 5 – Secrets</h2>
         <Intro i={5}/>
-        <p>Create (or empty) the repository that will host the <code>app-of-apps</code> manifests.</p>
-        <Nav/>
-      </>;
-
-      /* 6 ─ Secrets ---------------------------------------- */
-      case 6: return <>
-        <h2>Step 6 – Secrets</h2>
-        <Intro i={6}/>
         {(!keys||!pwds||busyKey)
           ? <Spinner size={32}/>
           : <>
@@ -290,27 +283,27 @@ export default function App(){
         }
       </>;
 
-      /* 7 ─ Deploy key ------------------------------------- */
-      case 7: return <>
-        <h2>Step 7 – Install the public key</h2>
-        <Intro i={7}/>
+      /* 6 ─ Deploy key ------------------------------------ */
+      case 6: return <>
+        <h2>Step 6 – Install the public key</h2>
+        <Intro i={6}/>
         <p>Add the public key above as a <strong>deploy key</strong> (read/write) in the app-of-apps repo.</p>
         {keys && copyBtn(keys.publicKey,"action-btn key-copy")}
         <Nav/>
       </>;
 
-      /* 8 ─ SSH VMs ---------------------------------------- */
-      case 8: return <>
-        <h2>Step 8 – SSH onto the VMs</h2>
-        <Intro i={8}/>
+      /* 7 ─ SSH VMs --------------------------------------- */
+      case 7: return <>
+        <h2>Step 7 – SSH onto the VMs</h2>
+        <Intro i={7}/>
         <p>Log into every VM that will join the RKE2 cluster.</p>
         <Nav/>
       </>;
 
-      /* 9 ─ Scripts ---------------------------------------- */
-      case 9: return <>
-        <h2>Step 9 – Download install scripts</h2>
-        <Intro i={9}/>
+      /* 8 ─ Scripts --------------------------------------- */
+      case 8: return <>
+        <h2>Step 8 – Download install scripts</h2>
+        <Intro i={8}/>
         {busyScp
           ? <Spinner size={28}/>
           : <table className="scripts-table">
@@ -330,10 +323,10 @@ export default function App(){
         <Nav/>
       </>;
 
-      /* 10 ─ Overview -------------------------------------- */
+      /* 9 ─ Overview -------------------------------------- */
       default: return <>
-        <h2>Step 10 – Overview 🎉</h2>
-        <Intro i={10}/>
+        <h2>Step 9 – Overview 🎉</h2>
+        <Intro i={9}/>
         <table className="summary-table">
           <tbody>
             <tr><th>Domain</th>        <td>{domain}</td> <td>{copyBtn(domain,"tiny-btn")}</td></tr>
