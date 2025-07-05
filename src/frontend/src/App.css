@@ -480,3 +480,12 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 }
 .action-btn:first-child{margin-left:0;}     /* no gap before the first */
 .action-btn:hover{background:#e5e8eb;}
+.theme-toggle{
+  position:absolute;          /* sits in the top-right corner */
+  top:1rem; right:1.4rem;
+  cursor:pointer;
+  font-size:1.4rem;
+  user-select:none;
+  transition:transform .2s;
+}
+.theme-toggle:hover{transform:scale(1.15);}

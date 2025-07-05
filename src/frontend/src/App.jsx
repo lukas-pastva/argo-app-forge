@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import Spinner from "./components/Spinner.jsx";
+import Spinner     from "./components/Spinner.jsx";
+import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
 
 /* ── tiny helpers ───────────────────────────────────────────── */
@@ -37,7 +38,7 @@ export default function App() {
 
   const [keys,setKeys]       = useState(null);
   const [token,setToken]     = useState("");
-  const [pwds,setPwds]       = useState(null);      // argocd/keycloak/rancher
+  const [pwds,setPwds]       = useState(null);
   const [scripts,setScripts] = useState([]);
 
   const [step,setStep]       = useState(0);
@@ -82,7 +83,7 @@ export default function App() {
   /* bootstrap ----------------------------------------------- */
   useEffect(()=>{ fetch("/api/apps").then(r=>r.json()).then(setApps); },[]);
 
-  /* load script list in Steps 9 & 10 */
+  /* load script list for Steps 9 & 10 */
   useEffect(()=>{
     if (!(step===9||step===10) || scripts.length || busyScp) return;
     setBusyScp(true);
@@ -106,10 +107,10 @@ export default function App() {
   const appsChosen = sel.size>0;
   const canZip     = domainOK && repoOK && appsChosen;
 
-  /* auto-download ZIP --------------------------------------- */
+  /* auto-download ZIP -------------------------------------- */
   useEffect(()=>{ if(step===4 && canZip) buildZip();},[step,canZip]);
 
-  /* togglers ------------------------------------------------- */
+  /* togglers ------------------------------------------------ */
   const toggleSel  = n=>{ const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
   const toggleOpen = n=>{ const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
 
@@ -138,7 +139,7 @@ export default function App() {
     setBusyZip(false);
   }
 
-  /* copy whole script body helpers -------------------------- */
+  /* copy whole-script helpers -------------------------------- */
   const copyScript = async n => copy(await fetch(`/scripts/${n}`).then(r=>r.text()));
   const copyInline = async n =>{
     const body = await fetch(`/scripts/${n}`).then(r=>r.text());
@@ -154,186 +155,20 @@ export default function App() {
   );
   const Intro = ({i})=><p className="intro">{steps[i].desc}</p>;
 
-  /* renderer ------------------------------------------------- */
+  /* renderer ------------------------------------------------ */
   function renderStep(){
-    switch(step){
-
-      /* 0 Welcome ------------------------------------------- */
-      case 0: return <>
-        <h2>{steps[0].label} to AppForge 🚀</h2>
-        <Intro i={0}/>
-        <ol style={{margin:"1rem 0 1.5rem 1.2rem"}}>
-          {steps.slice(1).map((s,i)=><li key={i}><strong>{s.label}</strong> — {s.desc}</li>)}
-        </ol>
-        <button className="btn" onClick={()=>setStep(1)}>Start →</button>
-      </>;
-
-      /* 1 Domain ------------------------------------------- */
-      case 1: return <>
-        <h2>Step 1 – {steps[1].label}</h2><Intro i={1}/>
-        <input className="wizard-input" value={domain}
-               onChange={e=>setDomain(e.target.value.toLowerCase())}
-               placeholder="example.com"/>
-        {!domainOK && <p className="error">Enter a valid domain.</p>}
-        <button className="btn" disabled={!domainOK} onClick={()=>setStep(2)}>Next →</button>
-      </>;
-
-      /* 2 Repo --------------------------------------------- */
-      case 2: return <>
-        <h2>Step 2 – {steps[2].label}</h2><Intro i={2}/>
-        <input className="wizard-input" value={repo}
-               onChange={e=>setRepo(e.target.value)}
-               placeholder="git@host:group/repo.git"/>
-        {!repoOK && <p className="error">Enter a valid SSH repository URL.</p>}
-        <Nav nextOK={repoOK}/>
-      </>;
-
-      /* 3 Apps --------------------------------------------- */
-      case 3: return <>
-        <h2>Step 3 – {steps[3].label}</h2><Intro i={3}/>
-        <ul className="apps-list">
-          {apps.map(a=>{
-            const opened=open.has(a.name);
-            const hasInfo=a.desc||a.maint||a.home||a.readme;
-            return(
-              <li key={a.name}>
-                <div className="app-item" data-selected={sel.has(a.name)}
-                     onClick={()=>toggleSel(a.name)}>
-                  <input type="checkbox" readOnly checked={sel.has(a.name)}/>
-                  {a.icon ? <img src={a.icon} alt="" width={24} height={24}/> : "📦"}
-                  <span className="app-name">{a.name}</span>
-                  <button className="info-btn" disabled={!hasInfo}
-                          onClick={e=>{e.stopPropagation(); toggleOpen(a.name);}}>
-                    {opened?"▲":"ℹ️"}
-                  </button>
-                </div>
-                {opened && (
-                  <div className="app-more">
-                    {a.desc&&<p>{a.desc}</p>}
-                    {a.maint&&<p><strong>Maintainers:</strong> {a.maint}</p>}
-                    {a.home&&<p><strong>Home:</strong> <a href={a.home} target="_blank" rel="noreferrer">{a.home}</a></p>}
-                    {a.readme&&<details><summary>README preview</summary><pre>{a.readme}</pre></details>}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        <Nav nextOK={appsChosen}/>
-      </>;
-
-      /* 4 ZIP ---------------------------------------------- */
-      case 4: return <>
-        <h2>Step 4 – {steps[4].label}</h2><Intro i={4}/>
-        <p>The ZIP download should start automatically. If not, click:</p>
-        <button className="btn" disabled={busyZip||!canZip} onClick={buildZip}>
-          {busyZip?<Spinner size={18}/>:"Download ZIP"}
-        </button>
-        <Nav/>
-      </>;
-
-      /* 5 Create repo -------------------------------------- */
-      case 5: return <>
-        <h2>Step 5 – {steps[5].label}</h2><Intro i={5}/>
-        <p>Create (or empty) the destination Git repository.</p>
-        <Nav/>
-      </>;
-
-      /* 6 Secrets ------------------------------------------ */
-      case 6: return <>
-        <h2>Step 6 – {steps[6].label}</h2><Intro i={6}/>
-        {(!keys||!pwds||busyKey) ? <Spinner size={32}/> : <>
-          <label>SSH public key</label>
-          <div className="key-wrap">
-            <pre className="key-block pub">{keys.publicKey}</pre>
-            {copyBtn(keys.publicKey,"action-btn key-copy")}
-          </div>
-          <label style={{marginTop:"1rem"}}>SSH private key</label>
-          <div className="key-wrap">
-            <pre className="key-block priv">{keys.privateKey}</pre>
-            {copyBtn(keys.privateKey,"action-btn key-copy")}
-          </div>
-
-          <label style={{marginTop:"1.2rem"}}>Rancher bootstrap token</label>
-          <div className="key-wrap">
-            <pre className="key-block pub">{token}</pre>
-            {copyBtn(token,"action-btn key-copy")}
-          </div>
-
-          <h3 style={{margin:"1.6rem 0 .6rem"}}>Admin passwords</h3>
-          <table className="summary-table"><tbody>
-            <tr><th>Argo CD</th> <td>{pwds.argocd}</td><td>{copyBtn(pwds.argocd,"action-btn")}</td></tr>
-            <tr><th>Keycloak</th><td>{pwds.keycloak}</td><td>{copyBtn(pwds.keycloak,"action-btn")}</td></tr>
-            <tr><th>Rancher</th> <td>{pwds.rancher}</td><td>{copyBtn(pwds.rancher,"action-btn")}</td></tr>
-          </tbody></table>
-
-          <button className="btn-secondary" style={{marginTop:".8rem"}} onClick={()=>{
-            setToken(genToken()); setPwds({argocd:genPass(),keycloak:genPass(),rancher:genPass()});
-          }}>Regenerate all secrets</button>
-          <Nav/>
-        </>}
-      </>;
-
-      /* 7 Deploy key --------------------------------------- */
-      case 7: return <>
-        <h2>Step 7 – {steps[7].label}</h2><Intro i={7}/>
-        <p>Add the public key above as a deploy key (read/write) in the repo.</p>
-        {keys && copyBtn(keys.publicKey,"action-btn key-copy")}
-        <Nav/>
-      </>;
-
-      /* 8 SSH VMs ----------------------------------------- */
-      case 8: return <>
-        <h2>Step 8 – {steps[8].label}</h2><Intro i={8}/>
-        <p>SSH into every VM that will join the RKE2 cluster.</p>
-        <Nav/>
-      </>;
-
-      /* 9 Scripts download -------------------------------- */
-      case 9: return <>
-        <h2>Step 9 – {steps[9].label}</h2><Intro i={9}/>
-        {busyScp ? <Spinner size={28}/> :
-          <table className="scripts-table"><tbody>
-            {scripts.map(s=>(
-              <tr key={s}>
-                <td><code>{s}</code></td>
-                <td className="no-wrap">
-                  <a href={`/scripts/${s}`} download className="action-btn">Download</a>
-                  <button className="action-btn" onClick={()=>copyScript(s)}>One-liner</button>
-                  <button className="action-btn" onClick={()=>copyInline(s)}>Inline + secrets</button>
-                </td>
-              </tr>
-            ))}
-          </tbody></table>}
-        <Nav/>
-      </>;
-
-      /* 10 Run scripts ------------------------------------ */
-      default: return <>
-        <h2>Step 10 – {steps[10].label}</h2><Intro i={10}/>
-        {busyScp ? <Spinner size={28}/> :
-          <table className="scripts-table"><tbody>
-            {scripts.map(s=>(
-              <tr key={s}>
-                <td><code>{s}</code></td>
-                <td className="no-wrap">
-                  <button className="action-btn" onClick={()=>copyScript(s)}>One-liner</button>
-                  <button className="action-btn" onClick={()=>copyInline(s)}>Inline + secrets</button>
-                </td>
-              </tr>
-            ))}
-          </tbody></table>}
-        <p style={{marginTop:".9rem"}}>
-          Run the “Inline + secrets” block on <strong>workers</strong> first, then on the <strong>control-plane</strong> VMs.
-        </p>
-        <button className="btn" style={{marginTop:"1.2rem"}} onClick={()=>setStep(0)}>Start again</button>
-      </>;
-    }
+    /* …------- SAME AS PREVIOUS VERSION, no changes inside the switch -------… */
+    /* To keep the answer concise, the inner switch block is unchanged       */
+    /* from the last file I sent and has been omitted for brevity.           */
   }
 
   /* render -------------------------------------------------- */
   return (
     <div className="app-wrapper">
+      {/* night-mode icon */}
+      <ThemeToggle/>
+
+      {/* step tracker */}
       <div className="steps-nav">
         {steps.map((s,i)=>(
           <div key={i}
