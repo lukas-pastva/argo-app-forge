@@ -13,7 +13,10 @@
   --primary:#3b93ff;      --primary-hov:#2174ff;
   --error:#ff6b6b;
 }
-
+[data-theme='dark'] .key-block{
+  background:#252b33;
+  color:var(--text);
+}
 /* ────────────────────────────────────────────────────────────────
    RESET & WRAPPER
    ────────────────────────────────────────────────────────────── */
