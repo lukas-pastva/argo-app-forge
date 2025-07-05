@@ -418,3 +418,52 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
   background:#f0f2f4;
 }
 
+/* 1️⃣  Lay key + button out in a row */
+.key-wrap{
+  position:relative;          /* keep for any future tweaks */
+  display:flex;               /* ← was block */
+  align-items:stretch;
+  gap:.6rem;                  /* tiny breathing room */
+  margin-bottom:.9rem;
+}
+
+/* 2️⃣  Key blocks take the full width that’s left */
+.key-wrap .key-block{
+  flex:1 1 auto;              /* grow / shrink */
+  margin:0;                   /* kill default gap */
+  max-height:3.8rem;          /* public & private = same */
+}
+
+/* 3️⃣  The button now sits *outside* the grey box */
+.key-wrap .key-copy,
+.key-wrap .btn-copy{
+  position:static !important; /* cancel earlier absolute rule */
+  padding:.55rem 1rem;        /* same vertical rhythm as inputs */
+  font-size:.9rem;            /* readable glyph */
+  height:auto;                /* stretch to match key-block */
+  align-self:stretch;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:var(--card);
+  cursor:pointer;
+  transition:background .2s;
+}
+.key-wrap .key-copy:hover,
+.key-wrap .btn-copy:hover{
+  background:#e5e8eb;
+}
+
+/* 4️⃣  Step-7 “Deploy key” solo button needs a little extra width */
+.step-content button.key-copy,
+.step-content button.btn-copy{
+  min-width:3.3rem;           /* just wide enough for the ⧉ glyph */
+}
+
+/* 5️⃣  Make the *private* key block the same height as public */
+.key-block.priv{
+  max-height:3.8rem;          /* previously 11rem */
+  overflow:auto;              /* still scrollable if needed */
+}
