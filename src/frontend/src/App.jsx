@@ -1,4 +1,4 @@
-/*  src/frontend/src/App.jsx  –  full file  */
+/*  src/frontend/src/App.jsx  */
 import React, { useEffect, useState } from "react";
 import Spinner     from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
@@ -20,10 +20,10 @@ const steps = [
   { label:"Apps",         desc:"Pick only the Helm apps you need." },
   { label:"ZIP + Repo",   desc:"Download the tailored ZIP, create the repo and push the files." },
   { label:"Secrets",      desc:"Generate SSH keys, Rancher token & admin passwords." },
-  { label:"Deploy key",   desc:"Add the public SSH key as a repo deploy key." },
-  { label:"SSH VMs",      desc:"SSH onto each VM that will join the RKE2 cluster." },
-  { label:"Scripts",      desc:"Copy helper install scripts and run them on the nodes." },
-  { label:"Overview",     desc:"Everything in one place – copy & save for later." }
+  { label:"Deploy key",   desc:"Add the public SSH key to your repo." },
+  { label:"SSH VMs",      desc:"SSH onto each VM that will join RKE2." },
+  { label:"Scripts",      desc:"Copy helper install scripts & run them." },
+  { label:"Overview",     desc:"Everything in one place – copy & save." }
 ];
 
 /* ─────────────────────────────────────────────────────────── */
@@ -36,9 +36,9 @@ export default function App(){
   const [sel,setSel]         = useState(new Set());
   const [open,setOpen]       = useState(new Set());
 
-  const [keys,setKeys]       = useState(null);          // { publicKey, privateKey }
-  const [token,setToken]     = useState("");            // Rancher join token
-  const [pwds,setPwds]       = useState(null);          // { argocd,keycloak,rancher }
+  const [keys,setKeys]       = useState(null);
+  const [token,setToken]     = useState("");
+  const [pwds,setPwds]       = useState(null);
   const [scripts,setScripts] = useState([]);
 
   const [step,setStep]       = useState(0);
@@ -68,7 +68,7 @@ export default function App(){
     `sudo bash ${n}`
   ].join("\n");
 
-  const inlineWithSecrets = (n,body) => [
+  const oneLinerWithSecrets = (n,body) => [
     `export ARGOCD_PASS="${pwds?.argocd??""}"`,
     `export KEYCLOAK_PASS="${pwds?.keycloak??""}"`,
     `export RANCHER_PASS="${pwds?.rancher??""}"`,
@@ -85,14 +85,14 @@ export default function App(){
   /* ── bootstrap ────────────────────────────────────────── */
   useEffect(()=>{ fetch("/api/apps").then(r=>r.json()).then(setApps); },[]);
 
-  /* scripts list pre-fetch (only on step 8) ---------------- */
+  /* scripts list pre-fetch -------------------------------- */
   useEffect(()=>{
     if (step!==8 || scripts.length || busyScp) return;
     setBusyScp(true);
     fetch("/api/scripts").then(r=>r.json()).then(setScripts).finally(()=>setBusyScp(false));
   },[step,scripts.length,busyScp]);
 
-  /* generate secrets when entering step 5 ------------------ */
+  /* generate secrets on entry ----------------------------- */
   useEffect(()=>{
     if (step!==5) return;
     if (!keys && !busyKey){
@@ -109,12 +109,15 @@ export default function App(){
   const appsChosen = sel.size>0;
   const canZip     = domainOK && repoOK && appsChosen;
 
-  /* auto-download ZIP on step 4 ---------------------------- */
+  /* auto-download ZIP ------------------------------------- */
   useEffect(()=>{ if(step===4 && canZip) buildZip(); },[step,canZip]);
 
   /* togglers ---------------------------------------------- */
   const toggleSel  = n => { const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
   const toggleOpen = n => { const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
+
+  const selectAll   = ()=> setSel(new Set(apps.map(a=>a.name)));
+  const unselectAll = ()=> setSel(new Set());
 
   const regenKeys = ()=>{
     setBusyKey(true);
@@ -141,9 +144,10 @@ export default function App(){
     setBusyZip(false);
   }
 
-  /* helpers to copy inline script ------------------------- */
-  const copyScript   = async n => copy(await fetch(`/scripts/${n}`).then(r=>r.text()));
-  const copyInline   = async n => copy(inlineWithSecrets(n,await fetch(`/scripts/${n}`).then(r=>r.text())));
+  /* helpers for script buttons ---------------------------- */
+  const copyScriptFile   = async n => copy(await fetch(`/scripts/${n}`).then(r=>r.text()));
+  const copyPlainOneLiner= async n => copy(oneLiner(n,await fetch(`/scripts/${n}`).then(r=>r.text())));
+  const copyPlusSecrets  = async n => copy(oneLinerWithSecrets(n,await fetch(`/scripts/${n}`).then(r=>r.text())));
 
   /* shared intro line ------------------------------------- */
   const Intro = ({i}) => <p className="intro">{steps[i].desc}</p>;
@@ -198,6 +202,10 @@ export default function App(){
       case 3: return <>
         <h2>Step 3 – Choose applications</h2>
         <Intro i={3}/>
+        <div className="apps-actions">
+          <button className="btn-secondary" onClick={selectAll}>Select all</button>
+          <button className="btn-secondary" onClick={unselectAll}>Un-select all</button>
+        </div>
         <ul className="apps-list">
           {apps.map(a=>{
             const hasInfo = a.desc||a.maint||a.home||a.readme;
@@ -235,9 +243,9 @@ export default function App(){
         <h2>Step 4 – Download ZIP & create repo</h2>
         <Intro i={4}/>
         <p>
-          1. Click <strong>Download ZIP</strong> (auto-starts).<br/>
-          2. Create / empty the Git repository.<br/>
-          3. Unzip the archive and push **all files to the <code>main</code> branch**.
+          1.&nbsp;Click <strong>Download ZIP</strong> (auto-starts).<br/>
+          2.&nbsp;Create or empty the repository <code>{repo||"(your-repo)"} </code>.<br/>
+          3.&nbsp;Unzip the archive and <strong>push every file to the <code>main</code> branch</strong>.
         </p>
         <button className="btn" disabled={busyZip||!canZip} onClick={buildZip}>
           {busyZip ? <Spinner size={18}/> : "Download ZIP"}
@@ -254,27 +262,27 @@ export default function App(){
           : <>
               <label>SSH public key</label>
               <div className="key-wrap">
-                <pre className="key-block pub">{keys.publicKey}</pre>
+                <pre className="key-block pub" style={{background:"var(--card)"}}>{keys.publicKey}</pre>
                 {copyBtn(keys.publicKey,"action-btn key-copy")}
               </div>
 
               <label style={{marginTop:"1rem"}}>SSH private key</label>
               <div className="key-wrap">
-                <pre className="key-block priv">{keys.privateKey}</pre>
+                <pre className="key-block priv" style={{background:"var(--card)"}}>{keys.privateKey}</pre>
                 {copyBtn(keys.privateKey,"action-btn key-copy")}
               </div>
 
               <label style={{marginTop:"1rem"}}>Rancher join token</label>
               <div className="key-wrap">
-                <pre className="key-block pub">{token}</pre>
+                <pre className="key-block pub" style={{background:"var(--card)"}}>{token}</pre>
                 {copyBtn(token,"action-btn key-copy")}
               </div>
 
               <label style={{marginTop:"1rem"}}>Admin passwords</label>
               <ul className="summary-list" style={{marginTop:".3rem"}}>
-                <li>Argo CD admin: <code>{pwds.argocd}</code> {copyBtn(pwds.argocd,"tiny-btn")}</li>
-                <li>Keycloak admin: <code>{pwds.keycloak}</code> {copyBtn(pwds.keycloak,"tiny-btn")}</li>
-                <li>Rancher UI admin: <code>{pwds.rancher}</code> {copyBtn(pwds.rancher,"tiny-btn")}</li>
+                <li>Argo CD: <code>{pwds.argocd}</code> {copyBtn(pwds.argocd,"tiny-btn")}</li>
+                <li>Keycloak: <code>{pwds.keycloak}</code> {copyBtn(pwds.keycloak,"tiny-btn")}</li>
+                <li>Rancher UI: <code>{pwds.rancher}</code> {copyBtn(pwds.rancher,"tiny-btn")}</li>
               </ul>
 
               <button className="btn-secondary" onClick={regenKeys}>Regenerate SSH keys</button>
@@ -287,7 +295,10 @@ export default function App(){
       case 6: return <>
         <h2>Step 6 – Install the public key</h2>
         <Intro i={6}/>
-        <p>Add the public key above as a <strong>deploy key</strong> (read/write) in the app-of-apps repo.</p>
+        <p>
+          Add the public key above as a <strong>deploy key</strong> (read/write) in&nbsp;
+          <code>{repo||"(your-repo)"}</code>.
+        </p>
         {keys && copyBtn(keys.publicKey,"action-btn key-copy")}
         <Nav/>
       </>;
@@ -311,10 +322,11 @@ export default function App(){
                 {scripts.map(s=>(
                   <tr key={s}>
                     <td><code>{s}</code></td>
-                    <td className="no-wrap">
+                    <td className="no-wrap" style={{display:"flex",gap:".5rem",flexWrap:"wrap"}}>
                       <a   href={`/scripts/${s}`} download className="tiny-btn">Download</a>
-                      <button className="tiny-btn" onClick={()=>copyScript(s)}>Copy file</button>
-                      <button className="tiny-btn" onClick={()=>copyInline(s)}>One-liner + env vars</button>
+                      <button className="tiny-btn" onClick={()=>copyScriptFile(s)}>Copy file</button>
+                      <button className="tiny-btn" onClick={()=>copyPlainOneLiner(s)}>One-liner</button>
+                      <button className="tiny-btn" onClick={()=>copyPlusSecrets(s)}>One-liner + secrets</button>
                     </td>
                   </tr>
                 ))}
