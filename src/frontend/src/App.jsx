@@ -2,65 +2,113 @@ import React, { useEffect, useState } from "react";
 import Spinner from "./components/Spinner.jsx";
 import "./App.css";
 
-/* ── helpers & regex ─────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   Helpers & regex
+   ────────────────────────────────────────────────────────── */
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
-/* Step-tracker labels (Welcome is step 0) */
-const stepsLbl = [
-  "Welcome", "Domain", "Repo", "Apps", "ZIP", "Create repo",
-  "SSH keys", "Deploy key", "SSH VMs",
-  "Scripts", "RKE token", "Run scripts", "Finish"
-];
-
-const toastDur = 2000;
-const genToken = () =>
+const toastDur  = 2000;
+const genToken  = () =>
   crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
 
-/* ────────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   Wizard steps: label  +  full-sentence description
+   ────────────────────────────────────────────────────────── */
+const steps = [
+  {
+    label: "Welcome",
+    desc : "Overview of what AppForge does and how this wizard works."
+  },
+  {
+    label: "Domain",
+    desc : "Pick the main domain that will be substituted into every manifest."
+  },
+  {
+    label: "Repo",
+    desc : "Enter the SSH URL of the Git repository that will host the app-of-apps manifests."
+  },
+  {
+    label: "Apps",
+    desc : "Select the Helm Applications you actually want to deploy."
+  },
+  {
+    label: "ZIP",
+    desc : "Download the tailor-made ZIP containing only the apps you selected."
+  },
+  {
+    label: "Create repo",
+    desc : "Create (or empty) the destination Git repository."
+  },
+  {
+    label: "SSH keys",
+    desc : "Generate an SSH key pair that ArgoCD will use to push changes."
+  },
+  {
+    label: "Deploy key",
+    desc : "Install the public key as a deploy key (read/write) in the repo."
+  },
+  {
+    label: "SSH VMs",
+    desc : "Log into each VM that will join the RKE2 cluster."
+  },
+  {
+    label: "Scripts",
+    desc : "Download helper scripts for installing RKE2 and dependencies."
+  },
+  {
+    label: "RKE token",
+    desc : "Generate a bootstrap token so worker nodes can join the cluster."
+  },
+  {
+    label: "Run scripts",
+    desc : "Execute the install scripts on worker nodes first, then on control-plane nodes."
+  },
+  {
+    label: "Finish",
+    desc : "All done – review the summary or start again."
+  }
+];
 
+/* ────────────────────────────────────────────────────────────
+   Component
+   ────────────────────────────────────────────────────────── */
 export default function App() {
 
-  /* ── state ────────────────────────────────────────────────── */
-  const [domain,  setDomain]  = useState("");
-  const [repo,    setRepo]    = useState("");
-  const [apps,    setApps]    = useState([]);     // [{name,icon,…}]
-  const [sel,     setSel]     = useState(new Set());
-  const [open,    setOpen]    = useState(new Set());
+  /* ---------------- state ---------------------------------- */
+  const [domain,  setDomain]   = useState("");
+  const [repo,    setRepo]     = useState("");
+  const [apps,    setApps]     = useState([]);      // [{name,icon,…}]
+  const [sel,     setSel]      = useState(new Set());
+  const [open,    setOpen]     = useState(new Set());
 
-  const [keys,    setKeys]    = useState(null);   // {publicKey,privateKey}
-  const [scripts, setScripts] = useState([]);
-  const [token,   setToken]   = useState("");
+  const [keys,    setKeys]     = useState(null);    // {publicKey,privateKey}
+  const [scripts, setScripts]  = useState([]);
+  const [token,   setToken]    = useState("");
 
-  const [step,    setStep]    = useState(0);
+  const [step,    setStep]     = useState(0);
 
   /* loaders */
-  const [busyZip, setBusyZip] = useState(false);
-  const [busyKey, setBusyKey] = useState(false);
-  const [busyScp, setBusyScp] = useState(false);
+  const [busyZip, setBusyZip]  = useState(false);
+  const [busyKey, setBusyKey]  = useState(false);
+  const [busyScp, setBusyScp]  = useState(false);
 
   /* toast */
-  const [msg,     setMsg]     = useState("");
+  const [msg,     setMsg]      = useState("");
 
-  /* ── validations / derived ───────────────────────────────── */
-  const domainOK   = DOMAIN_RE.test(domain.trim());
-  const repoOK     = REPO_RE.test(repo.trim());
-  const appsChosen = sel.size > 0;
-  const canZip     = domainOK && repoOK && appsChosen;
-
-  /* ── helpers now INSIDE component (avoids TDZ) ───────────── */
+  /* ---------------- helpers -------------------------------- */
   const toast = t => { setMsg(t); setTimeout(() => setMsg(""), toastDur); };
 
   const copy = (txt, cls = "btn-copy") =>
-    navigator.clipboard?.writeText(txt).then(() =>
-      toast(cls.includes("key-copy") ? "Copied" : "Copied!")
-    );
+    navigator.clipboard
+      ?.writeText(txt)
+      .then(() => toast(cls.includes("key-copy") ? "Copied" : "Copied!"));
 
   const copyBtn = (val, cls = "btn-copy") => (
     <button className={cls} onClick={() => copy(val, cls)}>⧉</button>
   );
 
-  /* one-liner helper */
+  /* one-liner helper for scripts */
   const oneLiner = n => [
     `cat <<"EOF" > ${n}`,
     `$(curl -fsSL "${location.origin}/scripts/${n}")`,
@@ -68,7 +116,7 @@ export default function App() {
     `sudo bash ${n}`
   ].join("\n");
 
-  /* ── bootstrap / side-effects ────────────────────────────── */
+  /* ---------------- bootstrap / side-effects --------------- */
   useEffect(() => { fetch("/api/apps").then(r => r.json()).then(setApps); }, []);
 
   useEffect(() => {
@@ -95,12 +143,17 @@ export default function App() {
   }, [step, keys, busyKey]);
 
   /* auto-download tailored ZIP immediately on entering step 4 */
+  const domainOK   = DOMAIN_RE.test(domain.trim());
+  const repoOK     = REPO_RE.test(repo.trim());
+  const appsChosen = sel.size > 0;
+  const canZip     = domainOK && repoOK && appsChosen;
+
   useEffect(() => {
-    if (step === 4 && canZip) buildZip();          // run once on entering 4
+    if (step === 4 && canZip) buildZip();
   }, [step, canZip]);
 
-  /* ── helpers for selection toggles ───────────────────────── */
-  const toggleSel = n => {
+  /* ---------------- selection toggles ---------------------- */
+  const toggleSel  = n => {
     const s = new Set(sel);
     s.has(n) ? s.delete(n) : s.add(n);
     setSel(s);
@@ -111,7 +164,7 @@ export default function App() {
     setOpen(s);
   };
 
-  /* SSH key re-generation */
+  /* ---------------- misc helpers --------------------------- */
   const regenKeys = () => {
     setBusyKey(true);
     fetch("/api/ssh-keygen")
@@ -120,39 +173,35 @@ export default function App() {
       .finally(() => setBusyKey(false));
   };
 
-  /* download tailored ZIP */
   async function buildZip() {
     if (busyZip) return;
     setBusyZip(true);
-
     const blob = await fetch("/api/build", {
       method : "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type":"application/json" },
       body   : JSON.stringify({
-        selected: [...sel],
-        repo   : repo.trim(),
-        domain : domain.trim().toLowerCase()
+        selected:[...sel],
+        repo    : repo.trim(),
+        domain  : domain.trim().toLowerCase()
       })
     }).then(r => r.blob());
 
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement("a"), {
-      href: url,
-      download: `${domain || "appforge"}.zip`
+      href:url, download:`${domain || "appforge"}.zip`
     }).click();
     URL.revokeObjectURL(url);
     setBusyZip(false);
   }
 
-  /* script helpers */
   const copyScript = async n => {
     const txt = await fetch(`/scripts/${n}`).then(r => r.text());
     copy(txt);
   };
 
-  /* ── navigation buttons (back / next) ────────────────────── */
+  /* ---------------- navigation ----------------------------- */
   const Nav = ({ nextOK = true }) => (
-    <div style={{ marginTop: "1rem" }}>
+    <div style={{ marginTop:"1rem" }}>
       <button className="btn-secondary" onClick={() => setStep(step - 1)}>
         ← Back
       </button>
@@ -163,27 +212,30 @@ export default function App() {
     </div>
   );
 
-  /* ── STEP RENDERER ───────────────────────────────────────── */
+  /* ---------------- step renderer -------------------------- */
   function renderStep() {
-    switch (step) {
+    /* helper to show description under <h2> */
+    const Intro = ({i}) => (
+      <p className="intro" style={{ marginTop:"-.6rem" }}>{steps[i].desc}</p>
+    );
 
+    switch (step) {
       /* 0 ─ WELCOME ----------------------------------------- */
       case 0: return <>
-        <h2>Welcome to AppForge 🚀</h2>
-        <p>
-          This wizard lets you pick only the Helm Applications you need,
-          replaces your repo URL &amp; domain inside all manifests,
-          then streams back a ready-to-install ZIP.
-        </p>
+        <h2>{steps[0].label} to AppForge 🚀</h2>
+        <p>{steps[0].desc}</p>
         <ol style={{ margin:"1rem 0 1.5rem 1.2rem" }}>
-          {stepsLbl.slice(1, -1).map((s, i) => <li key={i}>{s}</li>)}
+          {steps.slice(1).map((s, i) => (
+            <li key={i}><strong>{s.label}</strong> — {s.desc}</li>
+          ))}
         </ol>
         <button className="btn" onClick={() => setStep(1)}>Start →</button>
       </>;
 
       /* 1 ─ DOMAIN ------------------------------------------ */
       case 1: return <>
-        <h2>Step 1 – Main domain</h2>
+        <h2>Step 1 – {steps[1].label}</h2>
+        <Intro i={1}/>
         <input className="wizard-input" value={domain}
                onChange={e => setDomain(e.target.value.toLowerCase())}
                placeholder="example.com" />
@@ -194,17 +246,19 @@ export default function App() {
 
       /* 2 ─ REPO -------------------------------------------- */
       case 2: return <>
-        <h2>Step 2 – Git repository (SSH)</h2>
+        <h2>Step 2 – {steps[2].label}</h2>
+        <Intro i={2}/>
         <input className="wizard-input" value={repo}
                onChange={e => setRepo(e.target.value)}
                placeholder="git@host:group/repo.git" />
         {!repoOK && <p className="error">Enter a valid SSH repository URL.</p>}
-        <Nav nextOK={repoOK} />
+        <Nav nextOK={repoOK}/>
       </>;
 
       /* 3 ─ APPS -------------------------------------------- */
       case 3: return <>
-        <h2>Step 3 – Choose applications</h2>
+        <h2>Step 3 – {steps[3].label}</h2>
+        <Intro i={3}/>
         <ul className="apps-list">
           {apps.map(a => {
             const hasInfo = a.desc || a.maint || a.home || a.readme;
@@ -213,13 +267,12 @@ export default function App() {
               <li key={a.name}>
                 <div className="app-item" data-selected={sel.has(a.name)}
                      onClick={() => toggleSel(a.name)}>
-                  <input type="checkbox" readOnly checked={sel.has(a.name)} />
-                  {a.icon
-                    ? <img src={a.icon} alt="" width={24} height={24} />
-                    : "📦"}
+                  <input type="checkbox" readOnly checked={sel.has(a.name)}/>
+                  {a.icon ? <img src={a.icon} alt="" width={24} height={24}/>
+                          : "📦"}
                   <span className="app-name">{a.name}</span>
                   <button className="info-btn" disabled={!hasInfo}
-                          onClick={e => { e.stopPropagation(); toggleOpen(a.name); }}>
+                          onClick={e => {e.stopPropagation();toggleOpen(a.name);}}>
                     {opened ? "▲" : "ℹ️"}
                   </button>
                 </div>
@@ -236,124 +289,122 @@ export default function App() {
             );
           })}
         </ul>
-        <Nav nextOK={appsChosen} />
+        <Nav nextOK={appsChosen}/>
       </>;
 
       /* 4 ─ ZIP (auto-downloads) ----------------------------- */
       case 4: return <>
-        <h2>Step 4 – Download tailored ZIP</h2>
-        <p>The ZIP download should start automatically. If it doesn’t,
-           click the button below.</p>
+        <h2>Step 4 – {steps[4].label}</h2>
+        <Intro i={4}/>
+        <p>The ZIP download should start automatically. If it doesn’t, click the button below.</p>
         <button className="btn" disabled={busyZip || !canZip}
                 onClick={buildZip}>
-          {busyZip ? <Spinner size={18} /> : "Download ZIP"}
+          {busyZip ? <Spinner size={18}/> : "Download ZIP"}
         </button>
-        <Nav />
+        <Nav/>
       </>;
 
       /* 5 ─ CREATE REPO ------------------------------------- */
       case 5: return <>
-        <h2>Step 5 – Create the app-of-apps repo</h2>
-        <p>Create (or empty) the repository that will host the
-           <code> app-of-apps </code> manifests.</p>
-        <Nav />
+        <h2>Step 5 – {steps[5].label}</h2>
+        <Intro i={5}/>
+        <p>Create (or empty) the repository that will host the <code>app-of-apps</code> manifests.</p>
+        <Nav/>
       </>;
 
-      /* 6 ─ SSH KEYS (auto-generated) ----------------------- */
+      /* 6 ─ SSH KEYS --------------------------------------- */
       case 6: return <>
-        <h2>Step 6 – SSH key pair</h2>
+        <h2>Step 6 – {steps[6].label}</h2>
+        <Intro i={6}/>
         {(!keys || busyKey)
-          ? <Spinner size={32} />
+          ? <Spinner size={32}/>
           : <>
               <label>Public key</label>
               <div className="key-wrap">
                 <pre className="key-block pub">{keys.publicKey}</pre>
-                {copyBtn(keys.publicKey, "btn-copy key-copy")}
+                {copyBtn(keys.publicKey,"btn-copy key-copy")}
               </div>
 
-              <label style={{ marginTop:"1rem" }}>Private key</label>
+              <label style={{marginTop:"1rem"}}>Private key</label>
               <div className="key-wrap">
                 <pre className="key-block priv">{keys.privateKey}</pre>
-                {copyBtn(keys.privateKey, "btn-copy key-copy")}
+                {copyBtn(keys.privateKey,"btn-copy key-copy")}
               </div>
 
               <button className="btn-secondary" onClick={regenKeys}>
                 Regenerate keys
               </button>
-              <Nav />
+              <Nav/>
             </>
         }
       </>;
 
       /* 7 ─ DEPLOY KEY -------------------------------------- */
       case 7: return <>
-        <h2>Step 7 – Install the public key</h2>
-        <p>Add the public key above as a deploy key (read/write)
-           in the app-of-apps repo.</p>
-        {keys && copyBtn(keys.publicKey, "btn-copy key-copy")}
-        <Nav />
+        <h2>Step 7 – {steps[7].label}</h2>
+        <Intro i={7}/>
+        <p>Add the public key above as a deploy key (read/write) in the app-of-apps repo.</p>
+        {keys && copyBtn(keys.publicKey,"btn-copy key-copy")}
+        <Nav/>
       </>;
 
       /* 8 ─ SSH VMs ----------------------------------------- */
       case 8: return <>
-        <h2>Step 8 – SSH onto the VMs</h2>
+        <h2>Step 8 – {steps[8].label}</h2>
+        <Intro i={8}/>
         <p>Log into every VM that will join the RKE2 cluster.</p>
-        <Nav />
+        <Nav/>
       </>;
 
-      /* 9 ─ SCRIPTS TABLE ----------------------------------- */
+      /* 9 ─ SCRIPTS ----------------------------------------- */
       case 9: return <>
-        <h2>Step 9 – Download install scripts</h2>
+        <h2>Step 9 – {steps[9].label}</h2>
+        <Intro i={9}/>
         {busyScp
-          ? <Spinner size={28} />
+          ? <Spinner size={28}/>
           : <table className="scripts-table">
               <tbody>
                 {scripts.map(s => (
                   <tr key={s}>
                     <td><code>{s}</code></td>
                     <td className="no-wrap">
-                      <a  href={`/scripts/${s}`} download
-                          className="tiny-btn">Download</a>
-                      <button className="tiny-btn" onClick={() => copyScript(s)}>
-                        Copy
-                      </button>
-                      <button className="tiny-btn"
-                              onClick={() => copy(oneLiner(s), "tiny-btn")}>
-                        One-liner
-                      </button>
+                      <a href={`/scripts/${s}`} download className="tiny-btn">Download</a>
+                      <button className="tiny-btn" onClick={()=>copyScript(s)}>Copy</button>
+                      <button className="tiny-btn" onClick={()=>copy(oneLiner(s),"tiny-btn")}>One-liner</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>}
-        <Nav />
+        <Nav/>
       </>;
 
       /* 10 ─ RKE TOKEN -------------------------------------- */
       case 10: return <>
-        <h2>Step 10 – RKE token</h2>
+        <h2>Step 10 – {steps[10].label}</h2>
+        <Intro i={10}/>
         <div className="key-wrap">
           <pre className="key-block pub">{token}</pre>
-          {copyBtn(token, "btn-copy key-copy")}
+          {copyBtn(token,"btn-copy key-copy")}
         </div>
-        <button className="btn-secondary" style={{ marginTop:".8rem" }}
-                onClick={() => setToken(genToken())}>
-          Regenerate
-        </button>
-        <Nav />
+        <button className="btn-secondary" style={{marginTop:".8rem"}}
+                onClick={()=>setToken(genToken())}>Regenerate</button>
+        <Nav/>
       </>;
 
       /* 11 ─ RUN SCRIPTS ------------------------------------ */
       case 11: return <>
-        <h2>Step 11 – Execute the scripts</h2>
+        <h2>Step 11 – {steps[11].label}</h2>
+        <Intro i={11}/>
         <p>Run the install scripts on <strong>worker</strong> nodes first,
            then on the <strong>control-plane</strong> nodes.</p>
-        <Nav />
+        <Nav/>
       </>;
 
-      /* 12 ─ FINISH + SUMMARY ------------------------------- */
+      /* 12 ─ FINISH ----------------------------------------- */
       default: return <>
-        <h2>Step 12 – Finished 🎉</h2>
+        <h2>Step 12 – {steps[12].label} 🎉</h2>
+        <Intro i={12}/>
         <h3>Overview</h3>
         <table className="summary-table">
           <tbody>
@@ -361,41 +412,37 @@ export default function App() {
                                         <td>{copyBtn(domain,"tiny-btn")}</td></tr>
             <tr><th>Git repo</th>      <td>{repo}</td>
                                         <td>{copyBtn(repo,"tiny-btn")}</td></tr>
-            <tr><th>Apps</th>          <td colSpan={2}>
-                                          {[...sel].join(", ") || "—"}
-                                        </td></tr>
-            <tr><th>SSH public key</th><td style={{ wordBreak:"break-all" }}>
-                                          {keys?.publicKey || "—"}
-                                        </td>
+            <tr><th>Apps</th>          <td colSpan={2}>{[...sel].join(", ") || "—"}</td></tr>
+            <tr><th>SSH public key</th><td style={{wordBreak:"break-all"}}>{keys?.publicKey || "—"}</td>
                                         <td>{keys && copyBtn(keys.publicKey,"tiny-btn")}</td></tr>
-            <tr><th>SSH private key</th><td style={{ wordBreak:"break-all" }}>
-                                          {keys?.privateKey || "—"}
-                                        </td>
+            <tr><th>SSH private key</th><td style={{wordBreak:"break-all"}}>{keys?.privateKey || "—"}</td>
                                         <td>{keys && copyBtn(keys.privateKey,"tiny-btn")}</td></tr>
             <tr><th>RKE token</th>     <td>{token || "—"}</td>
                                         <td>{token && copyBtn(token,"tiny-btn")}</td></tr>
           </tbody>
         </table>
-        <button className="btn" style={{ marginTop:"1.2rem" }}
-                onClick={() => setStep(0)}>Start again</button>
+        <button className="btn" style={{marginTop:"1.2rem"}}
+                onClick={()=>setStep(0)}>Start again</button>
       </>;
     }
   }
 
-  /* ── RENDER ──────────────────────────────────────────────── */
+  /* ---------------- render ---------------------------------- */
   return (
     <div className="app-wrapper">
+
       {/* step tracker */}
       <div className="steps-nav">
-        {stepsLbl.map((lbl, i) => (
+        {steps.map((s, i) => (
           <div key={i}
                className={
-                 "step-pill " +
-                 (i === step ? "active" : i < step ? "completed" : "disabled")
+                 "step-pill "+
+                 (i===step ? "active" : i<step ? "completed" : "disabled")
                }
-               onClick={() => { if (i <= step) setStep(i); }}>
-            <span className="num">{i + 1}</span>
-            <span className="lbl">{lbl}</span>
+               title={s.desc}
+               onClick={()=>{ if(i<=step) setStep(i); }}>
+            <span className="num">{i+1}</span>
+            <span className="lbl">{s.label}</span>
           </div>
         ))}
       </div>
