@@ -467,3 +467,16 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
   max-height:3.8rem;          /* previously 11rem */
   overflow:auto;              /* still scrollable if needed */
 }
+.action-btn{
+  display:inline-block;
+  padding:.4rem .85rem;
+  margin-left:.5rem;
+  border:2px solid var(--border);
+  border-radius:9999px;        /* pill-shape */
+  background:var(--card);
+  font-size:.85rem;
+  cursor:pointer;
+  transition:background .25s,border-color .25s;
+}
+.action-btn:first-child{margin-left:0;}     /* no gap before the first */
+.action-btn:hover{background:#e5e8eb;}
