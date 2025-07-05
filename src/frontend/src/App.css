@@ -233,3 +233,17 @@ ul{margin:0;padding:0;}
   background:var(--card);padding:.6rem 1.2rem;border:1px solid var(--border);
   border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:4000;
 }
+/* ───── Spinner ─────────────────────────────────────────────── */
+.spinner{
+  display:inline-block;
+  border:3px solid var(--border);
+  border-top-color:var(--primary);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* extra gap next to the “Copy” buttons under SSH keys */
+.key-actions .btn-secondary{
+  margin-left:1.2rem;
+}

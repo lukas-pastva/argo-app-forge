@@ -9,6 +9,7 @@ const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 /* ── tiny helpers ───────────────────────────────────────────── */
 const copy = (txt, onDone) =>
   navigator.clipboard?.writeText(txt).then(onDone);
+const toastDuration = 2000;  // ms
 
 /* ───────────────────────────────────────────────────────────── */
 
@@ -17,12 +18,12 @@ export default function App() {
   const [domain, setDomain] = useState("");
   const [repo,   setRepo]   = useState("");
 
-  const [apps, setApps]     = useState([]);          // [{ name, icon, … }]
-  const [sel,  setSel]      = useState(new Set());   // selected app names
-  const [open, setOpen]     = useState(new Set());   // info panels open
+  const [apps, setApps] = useState([]);            // [{ name, icon, … }]
+  const [sel,  setSel]  = useState(new Set());     // selected app names
+  const [open, setOpen] = useState(new Set());     // info panels open
 
-  const [keys,    setKeys]    = useState(null);      // { publicKey, privateKey }
-  const [scripts, setScripts] = useState([]);        // ["00-init.sh", …]
+  const [keys,    setKeys]    = useState(null);    // { publicKey, privateKey }
+  const [scripts, setScripts] = useState([]);      // ["00-init.sh", …]
   const [token,   setToken]   = useState("");
 
   const [step,    setStep]    = useState(0);
@@ -39,6 +40,11 @@ export default function App() {
   useEffect(() => {
     fetch("/api/apps").then(r => r.json()).then(setApps);
   }, []);
+
+  /* auto-fetch install scripts when we enter Step 8 ------------- */
+  useEffect(() => {
+    if (step === 8 && !scripts.length && !busyScripts) fetchScripts();
+  }, [step, scripts.length, busyScripts]);
 
   /* derived ---------------------------------------------------- */
   const domainOK   = DOMAIN_RE.test(domain.trim());
@@ -71,7 +77,7 @@ export default function App() {
     const url = `${window.location.origin}/scripts/${name}`;
     copy(`curl -fsSL "${url}" | sudo bash`, () => toast("One-liner copied"));
   }
-  const toast = (t) => { setMsg(t); setTimeout(() => setMsg(""), 2000); };
+  const toast = (t) => { setMsg(t); setTimeout(() => setMsg(""), toastDuration); };
 
   /* ZIP builder ------------------------------------------------ */
   async function buildZip() {
@@ -216,11 +222,19 @@ export default function App() {
               <>
                 <label>Public key</label>
                 <pre className="code-block">{keys.publicKey}</pre>
-                <button className="btn-secondary" onClick={() => copy(keys.publicKey, () => toast("Copied"))}>Copy</button>
+                <div className="key-actions">
+                  <button className="btn-secondary" onClick={() => copy(keys.publicKey, () => toast("Copied"))}>
+                    Copy
+                  </button>
+                </div>
 
                 <label style={{marginTop:"1rem"}}>Private key</label>
                 <pre className="code-block">{keys.privateKey}</pre>
-                <button className="btn-secondary" onClick={() => copy(keys.privateKey, () => toast("Copied"))}>Copy</button>
+                <div className="key-actions">
+                  <button className="btn-secondary" onClick={() => copy(keys.privateKey, () => toast("Copied"))}>
+                    Copy
+                  </button>
+                </div>
 
                 <NavButtons />
               </>
@@ -234,7 +248,8 @@ export default function App() {
           <>
             <h2>Step 7 – Install the public key</h2>
             <p>Add the public key above as a deploy key (read/write) in the app-of-apps repo.</p>
-            <button className="btn-secondary" onClick={() => copy(keys?.publicKey || "", () => toast("Copied"))}>
+            <button className="btn-secondary"
+                    onClick={() => copy(keys?.publicKey || "", () => toast("Copied"))}>
               Copy public key
             </button>
             <NavButtons />
@@ -253,8 +268,6 @@ export default function App() {
 
       /* 8 ─ install scripts ----------------------------------- */
       case 8:
-        /* auto-fetch once */
-        useEffect(() => { if (!scripts.length && !busyScripts) fetchScripts(); }, [scripts, busyScripts]);
         return (
           <>
             <h2>Step 9 – Download install scripts</h2>
@@ -284,14 +297,17 @@ export default function App() {
           <>
             <h2>Step 10 – Generate RKE token</h2>
             {!token ? (
-              <button className="btn" onClick={() =>
-                setToken(crypto.randomUUID?.() || Math.random().toString(36).slice(2,12))}>
+              <button className="btn"
+                      onClick={() =>
+                        setToken(crypto.randomUUID?.() || Math.random().toString(36).slice(2,12))}>
                 Generate token
               </button>
             ) : (
               <>
                 <pre className="code-block">{token}</pre>
-                <button className="btn-secondary" onClick={() => copy(token, () => toast("Copied"))}>Copy</button>
+                <button className="btn-secondary" onClick={() => copy(token, () => toast("Copied"))}>
+                  Copy
+                </button>
                 <NavButtons />
               </>
             )}
