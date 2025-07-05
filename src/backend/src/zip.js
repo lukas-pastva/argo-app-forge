@@ -91,7 +91,10 @@ export async function listApps(){
 }
 
 /* ── 2)  Build ZIP (filters values + charts) ────────────────── */
-export async function buildZip(keepNames, tokenOutput=cfg.nameDefault){
+// keepNames  … array of Application names to keep
+// repoReplace … actual repo URL entered in the wizard (for ${REPO_TOKEN_INPUT})
+// domainReplace … domain entered in the wizard (for ${DOMAIN_TOKEN_INPUT})
+export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const root  = await ensureRepo();
   const files = await appFiles(root);
 
