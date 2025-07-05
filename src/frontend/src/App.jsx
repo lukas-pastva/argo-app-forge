@@ -6,18 +6,15 @@ import "./App.css";
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
-/* ❶ Step labels — a new “Welcome” screen is now step 0 */
+/* Step-tracker labels (Welcome is step 0) */
 const stepsLbl = [
   "Welcome", "Domain", "Repo", "Apps", "ZIP", "Create repo",
   "SSH keys", "Deploy key", "SSH VMs",
   "Scripts", "RKE token", "Run scripts", "Finish"
 ];
 
-const copy = (txt, cls = "btn-copy") =>
-  navigator.clipboard?.writeText(txt)
-    .then(() => toast(`Copied${cls.includes("key-copy") ? "" : "!"}`));
-const toastDur = 2000;
-const genToken = () =>
+const toastDur  = 2000;
+const genToken  = () =>
   crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
 
 /* ────────────────────────────────────────────────────────────── */
@@ -45,11 +42,29 @@ export default function App() {
   /* toast */
   const [msg,     setMsg]      = useState("");
 
+  /* ── helpers now INSIDE component (fixes TDZ) ─────────────── */
+  const toast = t => { setMsg(t); setTimeout(() => setMsg(""), toastDur); };
+
+  const copy = (txt, cls = "btn-copy") =>
+    navigator.clipboard
+      ?.writeText(txt)
+      .then(() => toast(cls.includes("key-copy") ? "Copied" : "Copied!"));
+
+  const copyBtn = (val, cls = "btn-copy") => (
+    <button className={cls} onClick={() => copy(val, cls)}>⧉</button>
+  );
+
+  /* one-liner helper */
+  const oneLiner = n => [
+    `cat <<"EOF" > ${n}`,
+    `$(curl -fsSL "${location.origin}/scripts/${n}")`,
+    `EOF`,
+    `sudo bash ${n}`
+  ].join("\n");
+
   /* ── bootstrap / side-effects ─────────────────────────────── */
-  /* fetch application list once */
   useEffect(() => { fetch("/api/apps").then(r => r.json()).then(setApps); }, []);
 
-  /* auto-fetch install scripts on step 9 */
   useEffect(() => {
     if (step === 9 && !scripts.length && !busyScp) {
       setBusyScp(true);
@@ -60,11 +75,9 @@ export default function App() {
     }
   }, [step, scripts.length, busyScp]);
 
-  /* auto-generate RKE token on step 10 */
   useEffect(() => { if (step === 10 && !token) setToken(genToken()); },
             [step, token]);
 
-  /* auto-generate SSH keys when entering step 6 */
   useEffect(() => {
     if (step === 6 && !keys && !busyKey) {
       setBusyKey(true);
@@ -79,7 +92,7 @@ export default function App() {
   useEffect(() => {
     if (step === 4 && !busyZip && canZip) buildZip();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, busyZip, canZip]);
+  }, [step, busyZip]);
 
   /* ── validations / derived ───────────────────────────────── */
   const domainOK   = DOMAIN_RE.test(domain.trim());
@@ -87,9 +100,7 @@ export default function App() {
   const appsChosen = sel.size > 0;
   const canZip     = domainOK && repoOK && appsChosen;
 
-  /* ── tiny helpers ────────────────────────────────────────── */
-  function toast(t) { setMsg(t); setTimeout(() => setMsg(""), toastDur); }
-
+  /* ── helpers for selection toggles ────────────────────────── */
   const toggleSel  = n => {
     const s = new Set(sel);
     s.has(n) ? s.delete(n) : s.add(n);
@@ -101,10 +112,6 @@ export default function App() {
     setOpen(s);
   };
 
-  const copyBtn = (val, cls = "btn-copy") => (
-    <button className={cls} onClick={() => copy(val, cls)}>⧉</button>
-  );
-
   /* SSH key re-generation */
   const regenKeys = () => {
     setBusyKey(true);
@@ -114,17 +121,9 @@ export default function App() {
       .finally(() => setBusyKey(false));
   };
 
-  /* ❷ UPDATED one-liner helper as requested */
-  const oneLiner = n => [
-    `cat <<"EOF" > ${n}`,
-    `$(curl -fsSL "${location.origin}/scripts/${n}")`,
-    `EOF`,
-    `sudo bash ${n}`
-  ].join("\n");
-
   /* download tailored ZIP */
   async function buildZip() {
-    if (busyZip) return;           // guard against double-fire
+    if (busyZip) return;
     setBusyZip(true);
     const blob = await fetch("/api/build", {
       method : "POST",
@@ -386,7 +385,7 @@ export default function App() {
   return (
     <div className="app-wrapper">
 
-      {/* step tracker with labels */}
+      {/* step tracker */}
       <div className="steps-nav">
         {stepsLbl.map((lbl, i) => (
           <div key={i}
@@ -402,7 +401,7 @@ export default function App() {
       </div>
 
       {/* current step */}
-      <div className="step-content">{renderStep()}</div>
+      <div className="step-content">{/* renderStep() output here */}</div>
 
       {/* toast */}
       {msg && <div className="copy-msg">{msg}</div>}
