@@ -1,186 +1,387 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 
-const REPO_RE = /^git@[^:]+:[^/]+\/[^/]+\.git$/i;
+/* ── validators ─────────────────────────────────────────────── */
+const REPO_RE   = /^git@[^:]+:[^/]+\/[^/]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
-/* helper: Set from array of objects -------- */
-const toSet = arr => new Set(arr.map(o => o.name));
+/* ── tiny helpers ───────────────────────────────────────────── */
+const copy = (txt) =>
+  navigator.clipboard?.writeText(txt).then(() => alert("Copied!"));
+
+const genKeyPair = () => {
+  /* NOTE: placeholder – replace with real backend call if needed */
+  const rand = () =>
+    btoa(crypto.getRandomValues(new Uint32Array(8)).join(""));
+  return {
+    publicKey:  `ssh-rsa ${rand()} user@appforge`,
+    privateKey: `-----BEGIN PRIVATE KEY-----\n${rand()}\n-----END PRIVATE KEY-----`,
+  };
+};
+
+/* ───────────────────────────────────────────────────────────── */
 
 export default function App() {
-  const [apps,   setApps]   = useState([]);          // [{name,icon,desc,…}]
-  const [sel,    setSel]    = useState(new Set());   // selected app names
-  const [open,   setOpen]   = useState(new Set());   // info-panes open
-  const [repo,   setRepo]   = useState("");
-  const [domain, setDomain] = useState("");
-  const [tried,  setTried]  = useState(false);
-  const [busy,   setBusy]   = useState(false);
-  const [help,   setHelp]   = useState(false);
+  /* shared state ------------------------------------------------ */
+  const [domain,   setDomain]   = useState("");
+  const [repo,     setRepo]     = useState("");
+  const [apps,     setApps]     = useState([]);          // [{name,icon,desc…}]
+  const [sel,      setSel]      = useState(new Set());   // Set of selected names
+  const [keys,     setKeys]     = useState(null);        // { publicKey, privateKey }
+  const [scripts,  setScripts]  = useState([]);          // ["00-init.sh", …]
+  const [token,    setToken]    = useState("");          // random RKE token
+  const [step,     setStep]     = useState(0);           // wizard index
+  const [busyZip,  setBusyZip]  = useState(false);
 
-  /* ── fetch data once ───────────────────── */
+  /* fetch app list once ----------------------------------------- */
   useEffect(() => {
-    fetch("/api/apps").then(r => r.json()).then(setApps);
-    fetch("/api/defaults").then(r => r.json()).then(d => {
-      setRepo((d.repo   || "").trim());
-      setDomain((d.domain || "").trim().toLowerCase());
-    });
+    fetch("/api/apps").then((r) => r.json()).then(setApps);
   }, []);
 
-  /* ── validation helpers ────────────────── */
-  const repoOK   = REPO_RE.test(repo.trim());
-  const domainOK = DOMAIN_RE.test(domain.trim());
-  const valid    = repoOK && domainOK;
+  /* derived booleans -------------------------------------------- */
+  const domainOK    = DOMAIN_RE.test(domain.trim());
+  const repoOK      = REPO_RE.test(repo.trim());
+  const appsChosen  = sel.size > 0;
+  const canDownload = domainOK && repoOK && appsChosen;
 
-  let errRepo="", errDomain="";
-  if(tried){
-    if(!repoOK)   errRepo   = "Valid SSH repo (git@host:org/repo.git) required.";
-    if(!domainOK) errDomain = "Valid domain required.";
-  }
-
-  /* ── actions ───────────────────────────── */
-  const toggleSel  = n => { const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
-  const toggleOpen = n => { const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
-
-  async function build() {
-    setTried(true);
-    if (!valid || !sel.size) return;
-    setBusy(true);
-    const res  = await fetch("/api/build", {
+  /* zip helper --------------------------------------------------- */
+  async function buildZip() {
+    setBusyZip(true);
+    const res = await fetch("/api/build", {
       method : "POST",
       headers: { "Content-Type": "application/json" },
-      body   : JSON.stringify({ selected:[...sel], repo:repo.trim(), domain:domain.trim().toLowerCase() })
+      body   : JSON.stringify({
+        selected: [...sel],
+        repo   : repo.trim(),
+        domain : domain.trim().toLowerCase(),
+      }),
     });
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), { href:url, download:`${domain || "appforge"}.zip` }).click();
+    Object.assign(document.createElement("a"), {
+      href: url,
+      download: `${domain || "appforge"}.zip`,
+    }).click();
     URL.revokeObjectURL(url);
-    setBusy(false);
+    setBusyZip(false);
   }
 
-  /* ── help side-pane ────────────────────── */
-  const Help = () => (
-    <div className="modal-overlay" onClick={() => setHelp(false)}>
-      <div className="modal-dialog help" onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={() => setHelp(false)}>×</button>
-        <h2 style={{marginTop:0}}>Help 📘</h2>
-        <p><strong>AppForge</strong> trims your GitOps repo to the exact set of Applications you need for a fresh <strong>RKE2</strong> cluster.</p>
-        <ol>
-          <li>Select the Applications you want.</li>
-          <li>Fill&nbsp;in the unique <em>Name</em> for token replacement.</li>
-          <li>Press <em>Download ZIP</em> – you’ll get a ready-to-push <code>app-of-apps</code>.</li>
-        </ol>
-      </div>
-    </div>
-  );
+  /* fetch install-script list (Step 9) --------------------------- */
+  async function getScripts() {
+    try {
+      const list = await fetch("/api/scripts").then((r) => r.json());
+      setScripts(list);
+    } catch {
+      alert("Could not fetch scripts list (check backend).");
+    }
+  }
 
-  /* ── render ────────────────────────────── */
+  /* simple copy-toggle helper for <li> apps ---------------------- */
+  const toggleSel = (n) => {
+    const s = new Set(sel);
+    s.has(n) ? s.delete(n) : s.add(n);
+    setSel(s);
+  };
+
+  /* ─── WIZARD STEPS – each returns JSX ───────────────────────── */
+  const steps = [
+    () => (
+      <>
+        <h2>Step 1 – Main domain</h2>
+        <input
+          className="wizard-input"
+          value={domain}
+          onChange={(e) => setDomain(e.target.value.toLowerCase())}
+          placeholder="example.com"
+        />
+        {!domainOK && <p className="error">Enter a valid domain.</p>}
+        <button className="btn" disabled={!domainOK} onClick={() => setStep(1)}>
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 2 – Git repository&nbsp;(SSH)</h2>
+        <input
+          className="wizard-input"
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          placeholder="git@github.com:org/repo.git"
+        />
+        {!repoOK && (
+          <p className="error">Enter a valid SSH repository URL.</p>
+        )}
+        <button className="btn-secondary" onClick={() => setStep(0)}>
+          ← Back
+        </button>
+        <button className="btn" disabled={!repoOK} onClick={() => setStep(2)}>
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 3 – Choose applications</h2>
+        <p>Select the apps you want installed:</p>
+        <ul className="apps-list">
+          {apps.map((a) => (
+            <li
+              key={a.name}
+              className="app-item"
+              data-selected={sel.has(a.name)}
+              onClick={() => toggleSel(a.name)}
+            >
+              <input type="checkbox" readOnly checked={sel.has(a.name)} />
+              {a.icon ? (
+                <img src={a.icon} alt="" width={24} height={24} />
+              ) : (
+                <span>📦</span>
+              )}
+              <span className="app-name">{a.name}</span>
+            </li>
+          ))}
+        </ul>
+        <button className="btn-secondary" onClick={() => setStep(1)}>
+          ← Back
+        </button>
+        <button
+          className="btn"
+          disabled={!appsChosen}
+          onClick={() => setStep(3)}
+        >
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 4 – Download tailored ZIP</h2>
+        <button
+          className="btn"
+          disabled={busyZip || !canDownload}
+          onClick={buildZip}
+        >
+          {busyZip ? "Building…" : "Download ZIP"}
+        </button>
+        <div style={{ marginTop: "1rem" }}>
+          <button className="btn-secondary" onClick={() => setStep(2)}>
+            ← Back
+          </button>
+          <button className="btn" onClick={() => setStep(4)}>
+            Next →
+          </button>
+        </div>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 5 – Create the app-of-apps GitOps repo</h2>
+        <p>
+          In your Git provider, create (or empty) a repository that will hold
+          the <code>app-of-apps</code> manifest.
+        </p>
+        <button className="btn" onClick={() => setStep(5 + 1)}>
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 6 – Generate SSH key pair</h2>
+        {!keys ? (
+          <button className="btn" onClick={() => setKeys(genKeyPair())}>
+            Generate keys
+          </button>
+        ) : (
+          <>
+            <label>Public key</label>
+            <pre className="code-block">{keys.publicKey}</pre>
+            <button
+              className="btn-secondary"
+              onClick={() => copy(keys.publicKey)}
+            >
+              Copy
+            </button>
+
+            <label style={{ marginTop: "1rem" }}>Private key</label>
+            <pre className="code-block">{keys.privateKey}</pre>
+            <button
+              className="btn-secondary"
+              onClick={() => copy(keys.privateKey)}
+            >
+              Copy
+            </button>
+
+            <button
+              className="btn"
+              style={{ marginTop: "1rem" }}
+              onClick={() => setStep(6 + 1)}
+            >
+              Next →
+            </button>
+          </>
+        )}
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 7 – Install the public key in the repo</h2>
+        <p>
+          Add the <strong>public key</strong> above as a deploy key (read/write)
+          to the <em>app-of-apps</em> repository.
+        </p>
+        <button
+          className="btn-secondary"
+          onClick={() => copy(keys?.publicKey || "")}
+        >
+          Copy public key
+        </button>
+        <button
+          className="btn"
+          style={{ marginLeft: "1rem" }}
+          onClick={() => setStep(7 + 1)}
+        >
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 8 – SSH onto the VMs</h2>
+        <p>Log into every VM that will join the cluster.</p>
+        <button className="btn" onClick={() => setStep(8 + 1)}>
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 9 – Download install scripts</h2>
+        {!scripts.length ? (
+          <button className="btn" onClick={getScripts}>
+            Fetch scripts list
+          </button>
+        ) : (
+          <ul className="scripts-list">
+            {scripts.map((s) => (
+              <li key={s}>
+                <a href={`/scripts/${s}`} download>
+                  {s}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          className="btn"
+          style={{ marginTop: "1rem" }}
+          onClick={() => setStep(9 + 1)}
+        >
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 10 – Generate RKE token</h2>
+        {!token ? (
+          <button
+            className="btn"
+            onClick={() =>
+              setToken(
+                crypto.randomUUID?.() ||
+                  Math.random().toString(36).slice(2, 12),
+              )
+            }
+          >
+            Generate token
+          </button>
+        ) : (
+          <>
+            <pre className="code-block">{token}</pre>
+            <button className="btn-secondary" onClick={() => copy(token)}>
+              Copy token
+            </button>
+            <button
+              className="btn"
+              style={{ marginLeft: "1rem" }}
+              onClick={() => setStep(10 + 1)}
+            >
+              Next →
+            </button>
+          </>
+        )}
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 11 – Execute the scripts</h2>
+        <p>
+          Run the install scripts on <strong>worker</strong> nodes first, then
+          on the <strong>control-plane</strong> nodes.
+        </p>
+        <button className="btn" onClick={() => setStep(11 + 1)}>
+          Next →
+        </button>
+      </>
+    ),
+
+    () => (
+      <>
+        <h2>Step 12 – Finished 🎉</h2>
+        <p>
+          Your cluster should now come online and start syncing applications via
+          Argo CD.
+        </p>
+        <button className="btn" onClick={() => setStep(0)}>
+          Start again
+        </button>
+      </>
+    ),
+  ];
+
+  const Current = steps[step];
+
+  /* ─── render ────────────────────────────────────────────────── */
   return (
     <div className="app-wrapper">
-      {help && <Help />}
-      <button className="help-btn" onClick={() => setHelp(true)}>Help ℹ️</button>
-
-      <h1>AppForge</h1>
-      <p className="intro">
-        This wizard creates a tailor-made <strong>app-of-apps</strong> repository for onboarding new&nbsp;RKE2 clusters.
-      </p>
-
-      {/* top bar */}
-      <div className="top-row">
-        <div className="field">
-          <label>Git repository (SSH)</label>
-          <input
-            value={repo}
-            onChange={e => setRepo(e.target.value)}
-            placeholder="git@github.com:org/repo.git"
-          />
-          {errRepo && <div className="error">{errRepo}</div>}
-        </div>
-
-        <div className="field">
-          <label>Main domain</label>
-          <input
-            value={domain}
-            onChange={e => setDomain(e.target.value.toLowerCase().trim())}
-            placeholder="example.com"
-          />
-          {errDomain && <div className="error">{errDomain}</div>}
-        </div>
-
-        <button
-          className="btn download-btn"
-          disabled={busy || !sel.size || !valid}
-          onClick={build}
-        >
-          {busy ? "Building…" : "Download ZIP"}
-        </button>
+      {/* step pills ------------------------------------------------ */}
+      <div className="steps-nav">
+        {steps.map((_, i) => (
+          <div
+            key={i}
+            className={
+              "step-pill " +
+              (i === step
+                ? "active"
+                : i < step
+                ? "completed"
+                : "disabled")
+            }
+            onClick={() => {
+              if (i <= step) setStep(i);
+            }}
+          >
+            {i + 1}
+          </div>
+        ))}
       </div>
 
-      {/* bulk-select */}
-      <div className="apps-actions">
-        <button className="btn" onClick={() => setSel(toSet(apps))} disabled={!apps.length}>
-          Select all
-        </button>
-        <button className="btn-secondary" onClick={() => setSel(new Set())}>
-          Deselect
-        </button>
+      {/* body ----------------------------------------------------- */}
+      <div className="step-content">
+        <Current />
       </div>
-
-      <p className="apps-header">Please select which apps you want installed on&nbsp;the&nbsp;cluster:</p>
-
-      {/* grid */}
-      <ul className="apps-list">
-        {apps.map(a => {
-          const info = a.desc || a.maint || a.home || a.readme;
-          const isOpen = open.has(a.name);
-          return (
-            <li key={a.name}>
-              <div
-                className="app-item"
-                data-selected={sel.has(a.name)}
-                onClick={() => toggleSel(a.name)}
-              >
-                <input type="checkbox" checked={sel.has(a.name)} readOnly />
-
-                {a.icon
-                  ? <img src={a.icon} alt="" />
-                  : <span className="fallback-ico">📦</span>}
-
-                <span className="app-name">{a.name}</span>
-
-                {/* always show button – even if no meta (disabled style) */}
-                <button
-                  className="info-btn"
-                  disabled={!info}
-                  onClick={e => { e.stopPropagation(); toggleOpen(a.name); }}
-                  title={info ? "Show info" : "No additional info"}
-                >
-                  {isOpen ? "▲" : "ℹ️"}
-                </button>
-              </div>
-
-              {isOpen && (
-                <div className="app-more">
-                  {info
-                    ? (
-                      <>
-                        {a.desc  && <p>{a.desc}</p>}
-                        {a.maint && <p><strong>Maintainers:</strong> {a.maint}</p>}
-                        {a.home  && <p><strong>Home:</strong> <a href={a.home} target="_blank" rel="noreferrer">{a.home}</a></p>}
-                        {a.readme && (
-                          <details style={{marginTop:".4rem"}}>
-                            <summary>README preview</summary>
-                            <pre>{a.readme}</pre>
-                          </details>
-                        )}
-                      </>
-                    )
-                    : <em style={{color:"var(--text-light)"}}>No metadata found.</em>}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }

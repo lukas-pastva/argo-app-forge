@@ -152,3 +152,70 @@ ul{margin:0;padding:0;}
   padding:2rem 2.4rem;box-shadow:0 15px 45px rgba(0,0,0,.25);border:1px solid var(--border);width:72vw;max-width:900px;
 }
 .modal-close{position:absolute;top:.6rem;right:.9rem;border:none;background:none;font-size:1.8rem;cursor:pointer;color:var(--text-light);}
+/* ───────────────────────────────────────────────────────────────
+   … existing styles (unchanged) …
+   ──────────────────────────────────────────────────────────── */
+
+/* ── WIZARD / STEPPER ───────────────────────────────────────── */
+.steps-nav{
+  display:flex;
+  gap:.4rem;
+  overflow-x:auto;
+  margin-bottom:1.2rem;
+}
+.step-pill{
+  user-select:none;
+  padding:.4rem .8rem;
+  border:1px solid var(--border);
+  border-radius:9999px;
+  font-weight:600;
+  font-size:.9rem;
+  opacity:.4;
+  cursor:default;
+}
+.step-pill.active{
+  background:var(--primary);
+  color:#fff;
+  border-color:var(--primary);
+  opacity:1;
+}
+.step-pill.completed{
+  background:var(--primary-hov);
+  color:#fff;
+  border-color:var(--primary-hov);
+  opacity:1;
+  cursor:pointer;
+}
+.step-pill.disabled{cursor:default;}
+
+.step-content{min-height:40vh;}
+
+/* generic inputs & code blocks */
+.wizard-input{
+  width:100%;
+  padding:.65rem .9rem;
+  font-size:1.05rem;
+  border:1px solid var(--border);
+  border-radius:6px;
+  margin-bottom:.6rem;
+}
+.code-block{
+  white-space:pre-wrap;
+  background:#f5f7f9;
+  border:1px solid var(--border);
+  padding:.6rem .8rem;
+  border-radius:6px;
+  max-width:100%;
+  font-family:monospace;
+  font-size:.85rem;
+}
+
+/* scripts list */
+.scripts-list{
+  list-style:none;
+  padding:0;
+  margin:.8rem 0 0;
+}
+.scripts-list li{
+  margin:.25rem 0;
+}
