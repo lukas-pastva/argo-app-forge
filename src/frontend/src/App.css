@@ -114,19 +114,26 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 .step-pill.disabled{cursor:default;}
 
 /* ────────────────────────────────────────────────────────────────
-   KEY / TOKEN BLOCKS
+   KEY / TOKEN BLOCKS – height & copy-button tweaks
    ────────────────────────────────────────────────────────────── */
 .key-block{
-  position:relative;border:1px solid var(--border);border-radius:6px;background:#f5f7f9;
-  padding:.6rem .8rem;font-family:monospace;font-size:.85rem;white-space:pre-wrap;
-  word-break:break-all;overflow:auto;
+  position:relative;border:1px solid var(--border);border-radius:6px;
+  background:#f5f7f9;padding:.6rem .8rem;font-family:monospace;
+  font-size:.85rem;white-space:pre-wrap;word-break:break-all;overflow:auto;
 }
-.key-block.pub{max-height:3.8rem;}
-.key-block.priv{max-height:11rem;}
-.key-wrap{position:relative;margin-bottom:.9rem;}          /* lets copy live inside */
+/* ✅  public & private now SAME height (3.8 rem) */
+.key-block.pub,
+.key-block.priv{
+  max-height:3.8rem;
+}
 
-/* copy inside key-wrap uses .key-copy above */
-
+.key-wrap{position:relative;margin-bottom:.9rem;}
+/* ✅  any copy button inside a key-wrap docks top-right           */
+.key-wrap .btn-copy,
+.key-wrap .key-copy{
+  position:absolute;top:.5rem;right:.6rem;
+  padding:.25rem .55rem;font-size:.8rem;
+}
 /* ────────────────────────────────────────────────────────────────
    TABLES  (scripts + summary)
    ────────────────────────────────────────────────────────────── */
