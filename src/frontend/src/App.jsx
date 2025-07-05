@@ -401,7 +401,7 @@ export default function App() {
       </div>
 
       {/* current step */}
-      <div className="step-content">{/* renderStep() output here */}</div>
+      <div className="step-content">{renderStep()}</div>
 
       {/* toast */}
       {msg && <div className="copy-msg">{msg}</div>}
