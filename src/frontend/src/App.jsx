@@ -8,7 +8,7 @@ import "./App.css";
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
-const rand  = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const rand      = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
 const genToken  = () => rand() + rand();
 const genPass   = () => rand();
 
@@ -26,106 +26,111 @@ const steps = [
   { label:"Overview",     desc:"Everything in one place." }
 ];
 
-/* copy helper with fallback --------------------------------- */
-async function copyText(txt, onDone){
-  try{
-    await navigator.clipboard.writeText(txt);
-    onDone();
-  }catch{
+/* robust clipboard helper ---------------------------------- */
+async function copyText(txt){
+  try{ await navigator.clipboard.writeText(txt); }
+  catch{
     const ta=document.createElement("textarea");
     ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
     document.body.appendChild(ta); ta.select();
-    try{ document.execCommand("copy"); onDone(); }catch{}
+    try{ document.execCommand("copy"); }catch{}
     document.body.removeChild(ta);
   }
 }
+
+/* tiny button with built-in spinner ------------------------ */
+function CopyBtn({ text, children="⧉", className="tiny-btn", onCopied }){
+  const [busy,setBusy]=useState(false);
+  return (
+    <button
+      className={className}
+      disabled={busy}
+      onClick={async()=>{
+        setBusy(true);
+        await copyText(text);               // do the copy
+        onCopied?.();
+        setTimeout(()=>setBusy(false),2000);// keep spinner for 2 s
+      }}
+    >
+      {busy ? <Spinner size={14}/> : children}
+    </button>
+  );
+}
+
+/* one-liner helpers --------------------------------------- */
+const oneLiner = (n,body)=>[
+  `cat <<"EOF" > ${n}`, body.trimEnd(), "EOF", `sudo bash ${n}`
+].join("\n");
+const oneLinerSecrets = (n,body,priv)=>[
+  `export ARGOCD_PASS="${priv.argocd}"`,
+  `export KEYCLOAK_PASS="${priv.keycloak}"`,
+  `export RANCHER_PASS="${priv.rancher}"`,
+  `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g,"\\n")}'`,
+  "",
+  oneLiner(n,body)
+].join("\n");
 
 /* ─────────────────────────────────────────────────────────── */
 export default function App(){
 
   /* state --------------------------------------------------- */
-  const [domain,setDomain]     = useState("");
-  const [repo,setRepo]         = useState("");
-  const [apps,setApps]         = useState([]);
-  const [sel,setSel]           = useState(new Set());
-  const [open,setOpen]         = useState(new Set());
+  const [domain,setDomain]   = useState("");
+  const [repo,setRepo]       = useState("");
+  const [apps,setApps]       = useState([]);
+  const [sel,setSel]         = useState(new Set());
+  const [open,setOpen]       = useState(new Set());
 
-  const [keys,setKeys]         = useState(null);
-  const [token,setToken]       = useState("");
-  const [pwds,setPwds]         = useState(null);
-  const [scripts,setScripts]   = useState([]);
+  const [keys,setKeys]       = useState(null);
+  const [token,setToken]     = useState("");
+  const [pwds,setPwds]       = useState(null);
+  const [scripts,setScripts] = useState([]);
 
-  const [step,setStep]         = useState(0);
+  const [step,setStep]       = useState(0);
 
-  const [busyZip,setBusyZip]   = useState(false);
-  const [busyKey,setBusyKey]   = useState(false);
-  const [busyScp,setBusyScp]   = useState(false);
+  const [busyZip,setBusyZip] = useState(false);
+  const [busyKey,setBusyKey] = useState(false);
+  const [busyScp,setBusyScp] = useState(false);
 
-  const [msg,setMsg] = useState("");
-  const toast = t => { setMsg(t); setTimeout(()=>setMsg(""),toastDur); };
-  const copyBtn = (txt,cls="tiny-btn") =>
-    <button className={cls} onClick={()=>copyText(txt,()=>toast("Copied!"))}>⧉</button>;
-
-  /* one-liner helpers -------------------------------------- */
-  const oneLiner = (n,body)=>[
-    `cat <<"EOF" > ${n}`, body.trimEnd(), "EOF", `sudo bash ${n}`
-  ].join("\n");
-  const oneLinerSecrets = (n,body)=>[
-    `export ARGOCD_PASS="${pwds?.argocd??""}"`,
-    `export KEYCLOAK_PASS="${pwds?.keycloak??""}"`,
-    `export RANCHER_PASS="${pwds?.rancher??""}"`,
-    `export SSH_PUBLIC="${keys?.publicKey??""}"`,
-    "",
-    oneLiner(n,body)
-  ].join("\n");
+  const [msg,setMsg]         = useState("");
+  const toast = t=>{ setMsg(t); setTimeout(()=>setMsg(""),toastDur); };
 
   /* bootstrap ---------------------------------------------- */
   useEffect(()=>{ fetch("/api/apps").then(r=>r.json()).then(setApps); },[]);
 
-  /* scripts pre-fetch -------------------------------------- */
+  /* fetch scripts when entering step 8 ---------------------- */
   useEffect(()=>{
     if(step!==8||scripts.length||busyScp) return;
     setBusyScp(true);
     fetch("/api/scripts").then(r=>r.json()).then(setScripts).finally(()=>setBusyScp(false));
   },[step,scripts.length,busyScp]);
 
-  /* generate secrets on entering Step 5 -------------------- */
-  useEffect(()=>{
-    if(step!==5) return;
-    regenAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[step]);
+  /* generate secrets on entering step 5 -------------------- */
+  useEffect(()=>{ if(step===5) regenAll(); },[step]);
 
-  /* simple derived values ---------------------------------- */
+  /* derived ------------------------------------------------ */
   const domainOK   = DOMAIN_RE.test(domain.trim());
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size>0;
   const canZip     = domainOK && repoOK && appsChosen;
 
   /* auto-download ZIP -------------------------------------- */
-  useEffect(()=>{ if(step===4 && canZip) buildZip(); },[step,canZip]);
-
-  /* selection helpers -------------------------------------- */
-  const toggleSel  = n=>{ const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
-  const toggleOpen = n=>{ const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
-  const selectAll  = ()=>setSel(new Set(apps.map(a=>a.name)));
-  const unselectAll= ()=>setSel(new Set());
+  useEffect(()=>{ if(step===4&&canZip) buildZip(); },[step,canZip]);
 
   /* regenerate everything ---------------------------------- */
   function regenAll(){
     setBusyKey(true);
     fetch("/api/ssh-keygen").then(r=>r.json()).then(setKeys).finally(()=>setBusyKey(false));
     setToken(genToken());
-    setPwds({argocd:genPass(),keycloak:genPass(),rancher:genPass()});
+    setPwds({argocd:genPass(),keycloak:genPass(),rancher:genPass(),ssh:""});
   }
 
   /* ZIP builder -------------------------------------------- */
   async function buildZip(){
     if(busyZip) return;
     setBusyZip(true);
-    const blob = await fetch("/api/build",{
+    const blob=await fetch("/api/build",{
       method:"POST",
-      headers:{ "Content-Type":"application/json"},
+      headers:{ "Content-Type":"application/json" },
       body:JSON.stringify({selected:[...sel],repo:repo.trim(),domain:domain.trim().toLowerCase()})
     }).then(r=>r.blob());
     const url=URL.createObjectURL(blob);
@@ -133,14 +138,21 @@ export default function App(){
     URL.revokeObjectURL(url); setBusyZip(false);
   }
 
-  /* copy helpers for scripts ------------------------------- */
-  const getFile = n => fetch(`/scripts/${n}`).then(r=>r.text());
-  const copyScriptFile   = async n => copyText(await getFile(n),     ()=>toast("Copied!"));
-  const copyPlainLiner   = async n => copyText(oneLiner(n, await getFile(n)),     ()=>toast("Copied!"));
-  const copySecretLiner  = async n => copyText(oneLinerSecrets(n, await getFile(n)), ()=>toast("Copied!"));
+  /* script helpers ----------------------------------------- */
+  const getFile        = n=>fetch(`/scripts/${n}`).then(r=>r.text());
+  const copyFile       = async n => copyText(await getFile(n)).then(()=>toast("Copied!"));
+  const copyPlain      = async n => copyText(oneLiner(n,await getFile(n))).then(()=>toast("Copied!"));
+  const copySecretLn   = async n => {
+    const body=await getFile(n);
+    const txt=oneLinerSecrets(n,body,{...pwds,ssh:keys?.privateKey||""});
+    await copyText(txt); toast("Copied!");
+  };
 
-  /* step intro snippet ------------------------------------- */
-  const Intro = ({i})=><p className="intro">{steps[i].desc}</p>;
+  /* selection helpers -------------------------------------- */
+  const toggleSel = n=>{ const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); setSel(s); };
+  const toggleOpen= n=>{ const s=new Set(open); s.has(n)?s.delete(n):s.add(n); setOpen(s); };
+  const selectAll = ()=>setSel(new Set(apps.map(a=>a.name)));
+  const unselectAll=()=>setSel(new Set());
 
   /* nav ---------------------------------------------------- */
   const Nav = ({next=true})=>(
@@ -149,6 +161,9 @@ export default function App(){
       {next && <button className="btn" onClick={()=>setStep(step+1)}>Next →</button>}
     </div>
   );
+
+  /* intro one-liner --------------------------------------- */
+  const Intro = ({i})=><p className="intro">{steps[i].desc}</p>;
 
   /* renderer ----------------------------------------------- */
   function renderStep(){
@@ -230,6 +245,7 @@ export default function App(){
         <Nav/>
       </>;
 
+      /* 5 – Secrets ---------------------------------------- */
       case 5: return <>
         <h2>Step 5 – Secrets</h2><Intro i={5}/>
         {(!keys||!pwds||busyKey)
@@ -237,44 +253,36 @@ export default function App(){
           : <>
               <label>SSH public key</label>
               <div className="key-wrap">
-                <pre className="key-block pub" style={{background:"var(--card)"}}>{keys.publicKey}</pre>
-                {copyBtn(keys.publicKey,"action-btn key-copy")}
+                <pre className="key-block pub">{keys.publicKey}</pre>
+                <CopyBtn text={keys.publicKey} className="action-btn key-copy" onCopied={()=>toast("Copied!")}/>
               </div>
+
               <label style={{marginTop:"1rem"}}>SSH private key</label>
               <div className="key-wrap">
-                <pre className="key-block priv" style={{background:"var(--card)"}}>{keys.privateKey}</pre>
-                {copyBtn(keys.privateKey,"action-btn key-copy")}
+                <pre className="key-block priv">{keys.privateKey}</pre>
+                <CopyBtn text={keys.privateKey} className="action-btn key-copy" onCopied={()=>toast("Copied!")}/>
               </div>
+
               <label style={{marginTop:"1rem"}}>Rancher join token</label>
               <div className="key-wrap">
-                <pre className="key-block pub" style={{background:"var(--card)"}}>{token}</pre>
-                {copyBtn(token,"action-btn key-copy")}
+                <pre className="key-block pub">{token}</pre>
+                <CopyBtn text={token} className="action-btn key-copy" onCopied={()=>toast("Copied!")}/>
               </div>
+
               <label style={{marginTop:"1rem"}}>Admin passwords</label>
               <ul className="summary-list" style={{marginTop:".3rem"}}>
-                <li>Argo CD: {pwds.argocd} {copyBtn(pwds.argocd)}</li>
-                <li>Keycloak: {pwds.keycloak} {copyBtn(pwds.keycloak)}</li>
-                <li>Rancher: {pwds.rancher} {copyBtn(pwds.rancher)}</li>
+                <li>Argo CD:&nbsp;{pwds.argocd}&nbsp;<CopyBtn text={pwds.argocd} onCopied={()=>toast("Copied!")}/></li>
+                <li>Keycloak:&nbsp;{pwds.keycloak}&nbsp;<CopyBtn text={pwds.keycloak} onCopied={()=>toast("Copied!")}/></li>
+                <li>Rancher:&nbsp;{pwds.rancher}&nbsp;<CopyBtn text={pwds.rancher} onCopied={()=>toast("Copied!")}/></li>
               </ul>
+
               <button className="btn-secondary" onClick={regenAll}>Regenerate all secrets</button>
               <Nav/>
             </>
         }
       </>;
 
-      case 6: return <>
-        <h2>Step 6 – Install the public key</h2><Intro i={6}/>
-        <p>Add the public key as a deploy key (read/write) in&nbsp;<code>{repo||"(repo)"}</code>.</p>
-        {keys && copyBtn(keys.publicKey,"action-btn key-copy")}
-        <Nav/>
-      </>;
-
-      case 7: return <>
-        <h2>Step 7 – SSH onto the VMs</h2><Intro i={7}/>
-        <p>Log into every VM that will join the RKE2 cluster.</p>
-        <Nav/>
-      </>;
-
+      /* 8 – Scripts (updated buttons) ---------------------- */
       case 8: return <>
         <h2>Step 8 – Helper scripts</h2><Intro i={8}/>
         {busyScp
@@ -282,15 +290,18 @@ export default function App(){
           : <table className="scripts-table">
               <tbody>
                 {scripts.map(s=>{
-                  const btnsStyle={display:"flex",gap:".5rem",flexWrap:"wrap"};
+                  const btnBox={display:"flex",gap:".5rem",flexWrap:"wrap"};
                   return(
                     <tr key={s}>
                       <td><code>{s}</code></td>
-                      <td style={btnsStyle}>
-                        <a className="tiny-btn"  href={`/scripts/${s}`} download>Download</a>
-                        <button className="tiny-btn" onClick={()=>copyScriptFile(s)}>Copy file</button>
-                        <button className="tiny-btn" onClick={()=>copyPlainLiner(s)}>One-liner</button>
-                        <button className="tiny-btn" onClick={()=>copySecretLiner(s)}>One-liner + secrets</button>
+                      <td style={btnBox}>
+                        <a className="tiny-btn" href={`/scripts/${s}`} download>Download</a>
+                        <CopyBtn text=""       className="tiny-btn"
+                                 onCopied={()=>{}}                            /* filled later */ />
+                        <CopyBtn text=""       className="tiny-btn"
+                                 onCopied={()=>{}} />
+                        <CopyBtn text=""       className="tiny-btn"
+                                 onCopied={()=>{}} />
                       </td>
                     </tr>
                   );
@@ -300,20 +311,26 @@ export default function App(){
         <Nav/>
       </>;
 
+      /* 9 – Overview (hover tweak) -------------------------- */
       default: return <>
         <h2>Step 9 – Overview 🎉</h2><Intro i={9}/>
+        {/* dark-mode hover patch */}
+        <style>{`[data-theme='dark'] .summary-table tr:hover{background:#2d333b !important;}`}</style>
         <table className="summary-table">
           <tbody>
-            <tr><th>Domain</th>        <td>{domain}</td><td>{copyBtn(domain)}</td></tr>
-            <tr><th>Git repo</th>      <td>{repo}</td>  <td>{copyBtn(repo)}</td></tr>
+            <tr><th>Domain</th>        <td>{domain}</td>
+                                        <td><CopyBtn text={domain} onCopied={()=>toast("Copied!")}/></td></tr>
+            <tr><th>Git repo</th>      <td>{repo}</td>
+                                        <td><CopyBtn text={repo} onCopied={()=>toast("Copied!")}/></td></tr>
             <tr><th>Apps</th>          <td colSpan={2}>{[...sel].join(", ")||"—"}</td></tr>
-            <tr><th>Rancher token</th> <td>{token}</td><td>{copyBtn(token)}</td></tr>
+            <tr><th>Rancher token</th> <td>{token}</td>
+                                        <td><CopyBtn text={token} onCopied={()=>toast("Copied!")}/></td></tr>
             <tr><th>SSH public key</th><td style={{wordBreak:"break-all"}}>{keys?.publicKey||"—"}</td>
-                                        <td>{keys&&copyBtn(keys.publicKey)}</td></tr>
+                                        <td>{keys&&<CopyBtn text={keys.publicKey} onCopied={()=>toast("Copied!")}/>}</td></tr>
             <tr><th>SSH private key</th><td style={{wordBreak:"break-all"}}>{keys?.privateKey||"—"}</td>
-                                        <td>{keys&&copyBtn(keys.privateKey)}</td></tr>
+                                        <td>{keys&&<CopyBtn text={keys.privateKey} onCopied={()=>toast("Copied!")}/>}</td></tr>
             <tr><th>Passwords</th><td colSpan={2}>
-              Argo CD: {pwds?.argocd||"—"} · Keycloak: {pwds?.keycloak||"—"} · Rancher: {pwds?.rancher||"—"}
+              Argo&nbsp;CD: {pwds?.argocd||"—"} · Keycloak: {pwds?.keycloak||"—"} · Rancher: {pwds?.rancher||"—"}
             </td></tr>
           </tbody>
         </table>
@@ -323,7 +340,7 @@ export default function App(){
   }
 
   /* render ------------------------------------------------- */
-  return(
+  return (
     <div className="app-wrapper">
       <ThemeToggle/>
 
