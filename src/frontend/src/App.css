@@ -26,6 +26,11 @@ ul{margin:0;padding:0;}
 }
 
 /* ────────────────────────────────────────────────────────────────
+   TYPOGRAPHY
+   ────────────────────────────────────────────────────────────── */
+h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
+
+/* ────────────────────────────────────────────────────────────────
    HEADER / HELP
    ────────────────────────────────────────────────────────────── */
 .intro{margin:.15rem 0 1.3rem;font-size:.97rem;color:var(--text-light);}
@@ -36,6 +41,107 @@ ul{margin:0;padding:0;}
 }
 .help-btn:hover{background:#edf0f3;}
 
+/* ────────────────────────────────────────────────────────────────
+   BUTTONS (primary / secondary)
+   ────────────────────────────────────────────────────────────── */
+.btn,
+.btn-secondary{
+  padding:.7rem 1.6rem;
+  border:2px solid transparent;
+  border-radius:6px;
+  font-size:1rem;
+  cursor:pointer;
+  transition:background .25s, border-color .25s, color .25s;
+}
+.btn{
+  background:var(--primary);
+  border-color:var(--primary);
+  color:#fff;
+}
+.btn:hover{background:var(--primary-hov);}
+.btn:disabled{
+  background:#c4c8cd;border-color:#c4c8cd;color:#666;cursor:default;
+}
+.btn-secondary{background:#e6e9ec;color:var(--text);}
+[data-theme='dark'] .btn-secondary{background:#2f343a;color:var(--text-light);}
+.btn-secondary:hover{background:#d5d9dd;}
+[data-theme='dark'] .btn-secondary:hover{background:#3b4047;}
+
+/* ────────────────────────────────────────────────────────────────
+   UNIVERSAL “copy” & tiny utility buttons
+   ────────────────────────────────────────────────────────────── */
+.btn-copy,
+.tiny-btn,
+.key-copy{
+  padding:.35rem .7rem;          /* larger click-target */
+  font-size:.9rem;               /* bigger glyph */
+  border:1px solid var(--border);
+  background:var(--card);
+  border-radius:4px;
+  cursor:pointer;
+  text-decoration:none;          /* fixes blue underline on <a> */
+  color:inherit;                 /* inherit current text colour */
+  display:inline-block;
+}
+.btn-copy:hover,
+.tiny-btn:hover,
+.key-copy:hover{background:#e5e8eb;}
+
+/* ────────────────────────────────────────────────────────────────
+   WIZARD / TOP STEP-TRACKER
+   ────────────────────────────────────────────────────────────── */
+.steps-nav{display:flex;gap:.4rem;overflow-x:auto;margin-bottom:1.2rem;}
+.step-pill{
+  display:flex;flex-direction:column;align-items:center;
+  width:5.3rem;
+  padding:.4rem .8rem;
+  border:1px solid var(--border);
+  border-radius:9999px;
+  font-weight:600;
+  font-size:.9rem;
+  opacity:.4;
+  cursor:default;
+}
+.step-pill .num{display:block;margin-bottom:.15rem;}  /* number / label gap   */
+.step-pill .lbl{display:block;font-size:.68rem;line-height:1.1;white-space:nowrap;}
+.step-pill.active{
+  background:var(--primary);color:#fff;border-color:var(--primary);opacity:1;
+}
+.step-pill.completed{
+  background:var(--primary-hov);color:#fff;border-color:var(--primary-hov);
+  opacity:1;cursor:pointer;
+}
+.step-pill.disabled{cursor:default;}
+
+/* ────────────────────────────────────────────────────────────────
+   KEY / TOKEN BLOCKS
+   ────────────────────────────────────────────────────────────── */
+.key-block{
+  position:relative;border:1px solid var(--border);border-radius:6px;background:#f5f7f9;
+  padding:.6rem .8rem;font-family:monospace;font-size:.85rem;white-space:pre-wrap;
+  word-break:break-all;overflow:auto;
+}
+.key-block.pub{max-height:3.8rem;}
+.key-block.priv{max-height:11rem;}
+.key-wrap{position:relative;margin-bottom:.9rem;}          /* lets copy live inside */
+
+/* copy inside key-wrap uses .key-copy above */
+
+/* ────────────────────────────────────────────────────────────────
+   TABLES  (scripts + summary)
+   ────────────────────────────────────────────────────────────── */
+.scripts-table,.summary-table{width:100%;border-collapse:collapse;margin-top:.6rem;}
+.scripts-table  td,.scripts-table  th,
+.summary-table td,.summary-table th{
+  padding:.75rem 1rem;                   /* roomier rows */
+  border:1px solid var(--border);
+}
+.summary-table td{word-break:break-all;} /* long public key fits */
+.summary-table tr:hover{background:#f0f2f4;} /* subtle hover */
+
+/* ────────────────────────────────────────────────────────────────
+   REMAINDER OF ORIGINAL FILE (unchanged sections collapsed)
+   ────────────────────────────────────────────────────────────── */
 /* ────────────────────────────────────────────────────────────────
    TOP BAR
    ────────────────────────────────────────────────────────────── */
