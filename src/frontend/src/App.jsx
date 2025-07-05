@@ -90,9 +90,8 @@ export default function App() {
 
   /* auto-download tailored ZIP immediately on entering step 4 */
   useEffect(() => {
-    if (step === 4 && !busyZip && canZip) buildZip();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, busyZip]);
+    if (step === 4 && canZip) buildZip();      // run once on entering step 4
+  }, [step, canZip]);
 
   /* ── validations / derived ───────────────────────────────── */
   const domainOK   = DOMAIN_RE.test(domain.trim());
