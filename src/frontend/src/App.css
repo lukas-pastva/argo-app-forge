@@ -247,32 +247,23 @@ ul{margin:0;padding:0;}
 .key-actions .btn-secondary{
   margin-left:1.2rem;
 }
-/* --- key blocks ------------------------------------------- */
-.key-block {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #f5f7f9;
-  padding: .6rem .8rem;
-  font-family: monospace;
-  font-size: .85rem;
-  white-space: pre-wrap;
-  word-break: break-all;         /* prevent overflow */
-  overflow: auto;
+/* --- key / token display helpers -------------------------------- */
+.key-block{
+  position:relative;border:1px solid var(--border);border-radius:6px;background:#f5f7f9;
+  padding:.6rem .8rem;font-family:monospace;font-size:.85rem;
+  white-space:pre-wrap;word-break:break-all;overflow:auto;
 }
-.key-block.pub {                /* single-line public key */
-  max-height: 3.8rem;
-}
-.key-block.priv {               /* scrollable private key */
-  max-height: 11rem;
-}
+.key-block.pub{max-height:3.8rem;}
+.key-block.priv{max-height:11rem;}
 
-.key-copy {
-  position: absolute;
-  top: .4rem;
-  right: .6rem;
-  padding: .25rem .55rem;
-  font-size: .8rem;
+/* NEW: lightweight wrapper that lets us dock the copy button
+   *inside* the grey box and adds breathing room underneath */
+.key-wrap{position:relative;margin-bottom:.9rem;}
+
+/* copy icon – override any earlier definition so it sits in the corner */
+.key-copy{
+  position:absolute;top:.5rem;right:.6rem;
+  padding:.25rem .55rem;font-size:.8rem;
 }
 
 /* --- final overview list ---------------------------------- */
