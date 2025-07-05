@@ -279,3 +279,29 @@ ul{margin:0;padding:0;}
   right: -4rem;                 /* push copy button to the right */
   top: 0;
 }
+
+/* copy buttons – one size everywhere */
+.btn-copy, .tiny-btn, .key-copy{
+  padding:.25rem .55rem;
+  font-size:.8rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  border-radius:4px;
+  cursor:pointer;
+}
+.btn-copy:hover, .tiny-btn:hover, .key-copy:hover{background:#e5e8eb;}
+
+/* reuse class for JS side */
+.key-copy{position:absolute;top:.5rem;right:.6rem;}
+
+/* roomier tables */
+.scripts-table td,.scripts-table th,
+.summary-table  td,.summary-table  th{
+  padding:.65rem .9rem;            /* was .45rem .6rem */
+}
+
+/* subtle hover on summary rows */
+.summary-table tr:hover{
+  background:#f0f2f4;
+}
+
