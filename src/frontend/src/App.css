@@ -219,3 +219,17 @@ ul{margin:0;padding:0;}
 .scripts-list li{
   margin:.25rem 0;
 }
+/* extra gap between “Previous / Next” (or any 2 neighbouring) buttons */
+.btn + .btn,
+.btn + .btn-secondary,
+.btn-secondary + .btn,
+.btn-secondary + .btn-secondary{
+  margin-left:1.2rem;
+}
+
+/* tiny toast after copy-to-clipboard */
+.copy-msg{
+  position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);
+  background:var(--card);padding:.6rem 1.2rem;border:1px solid var(--border);
+  border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:4000;
+}

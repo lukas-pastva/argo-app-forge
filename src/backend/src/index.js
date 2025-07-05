@@ -1,10 +1,11 @@
 import express  from "express";
 import helmet   from "helmet";
 import fg       from "fast-glob";
+import fs       from "node:fs/promises";
 import path     from "node:path";
 import { listApps, buildZip } from "./zip.js";
 import { ensureRepo }  from "./git.js";
-import { genKeyPair }  from "./ssh.js";         // ← new
+import { genKeyPair }  from "./ssh.js";
 import cfg      from "./config.js";
 
 const app = express();
@@ -58,6 +59,18 @@ app.get("/api/scripts", async (_req, res) => {
   } catch (e) {
     console.error("scripts list error:", e);
     res.json([]);
+  }
+});
+
+/* RAW script download – GET /scripts/<file>  */
+app.get("/scripts/:name", async (req, res) => {
+  try {
+    const root = await ensureRepo();
+    const file = path.join(root, "scripts", req.params.name);
+    const txt  = await fs.readFile(file, "utf8");
+    res.type("text/plain").send(txt);
+  } catch {
+    res.status(404).send("script not found");
   }
 });
 
