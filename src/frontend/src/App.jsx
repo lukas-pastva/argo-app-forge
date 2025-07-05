@@ -13,8 +13,8 @@ const stepsLbl = [
   "Scripts", "RKE token", "Run scripts", "Finish"
 ];
 
-const toastDur  = 2000;
-const genToken  = () =>
+const toastDur = 2000;
+const genToken = () =>
   crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
 
 /* ────────────────────────────────────────────────────────────── */
@@ -22,33 +22,39 @@ const genToken  = () =>
 export default function App() {
 
   /* ── state ────────────────────────────────────────────────── */
-  const [domain,  setDomain]   = useState("");
-  const [repo,    setRepo]     = useState("");
-  const [apps,    setApps]     = useState([]);      // [{name,icon,…}]
-  const [sel,     setSel]      = useState(new Set());
-  const [open,    setOpen]     = useState(new Set());
+  const [domain,  setDomain]  = useState("");
+  const [repo,    setRepo]    = useState("");
+  const [apps,    setApps]    = useState([]);     // [{name,icon,…}]
+  const [sel,     setSel]     = useState(new Set());
+  const [open,    setOpen]    = useState(new Set());
 
-  const [keys,    setKeys]     = useState(null);    // {publicKey,privateKey}
-  const [scripts, setScripts]  = useState([]);
-  const [token,   setToken]    = useState("");
+  const [keys,    setKeys]    = useState(null);   // {publicKey,privateKey}
+  const [scripts, setScripts] = useState([]);
+  const [token,   setToken]   = useState("");
 
-  const [step,    setStep]     = useState(0);
+  const [step,    setStep]    = useState(0);
 
   /* loaders */
-  const [busyZip, setBusyZip]  = useState(false);
-  const [busyKey, setBusyKey]  = useState(false);
-  const [busyScp, setBusyScp]  = useState(false);
+  const [busyZip, setBusyZip] = useState(false);
+  const [busyKey, setBusyKey] = useState(false);
+  const [busyScp, setBusyScp] = useState(false);
 
   /* toast */
-  const [msg,     setMsg]      = useState("");
+  const [msg,     setMsg]     = useState("");
 
-  /* ── helpers now INSIDE component (fixes TDZ) ─────────────── */
+  /* ── validations / derived ───────────────────────────────── */
+  const domainOK   = DOMAIN_RE.test(domain.trim());
+  const repoOK     = REPO_RE.test(repo.trim());
+  const appsChosen = sel.size > 0;
+  const canZip     = domainOK && repoOK && appsChosen;
+
+  /* ── helpers now INSIDE component (avoids TDZ) ───────────── */
   const toast = t => { setMsg(t); setTimeout(() => setMsg(""), toastDur); };
 
   const copy = (txt, cls = "btn-copy") =>
-    navigator.clipboard
-      ?.writeText(txt)
-      .then(() => toast(cls.includes("key-copy") ? "Copied" : "Copied!"));
+    navigator.clipboard?.writeText(txt).then(() =>
+      toast(cls.includes("key-copy") ? "Copied" : "Copied!")
+    );
 
   const copyBtn = (val, cls = "btn-copy") => (
     <button className={cls} onClick={() => copy(val, cls)}>⧉</button>
@@ -62,7 +68,7 @@ export default function App() {
     `sudo bash ${n}`
   ].join("\n");
 
-  /* ── bootstrap / side-effects ─────────────────────────────── */
+  /* ── bootstrap / side-effects ────────────────────────────── */
   useEffect(() => { fetch("/api/apps").then(r => r.json()).then(setApps); }, []);
 
   useEffect(() => {
@@ -90,17 +96,11 @@ export default function App() {
 
   /* auto-download tailored ZIP immediately on entering step 4 */
   useEffect(() => {
-    if (step === 4 && canZip) buildZip();      // run once on entering step 4
+    if (step === 4 && canZip) buildZip();          // run once on entering 4
   }, [step, canZip]);
 
-  /* ── validations / derived ───────────────────────────────── */
-  const domainOK   = DOMAIN_RE.test(domain.trim());
-  const repoOK     = REPO_RE.test(repo.trim());
-  const appsChosen = sel.size > 0;
-  const canZip     = domainOK && repoOK && appsChosen;
-
-  /* ── helpers for selection toggles ────────────────────────── */
-  const toggleSel  = n => {
+  /* ── helpers for selection toggles ───────────────────────── */
+  const toggleSel = n => {
     const s = new Set(sel);
     s.has(n) ? s.delete(n) : s.add(n);
     setSel(s);
@@ -124,19 +124,21 @@ export default function App() {
   async function buildZip() {
     if (busyZip) return;
     setBusyZip(true);
+
     const blob = await fetch("/api/build", {
       method : "POST",
-      headers: { "Content-Type":"application/json" },
+      headers: { "Content-Type": "application/json" },
       body   : JSON.stringify({
-        selected:[...sel],
-        repo    : repo.trim(),
-        domain  : domain.trim().toLowerCase()
+        selected: [...sel],
+        repo   : repo.trim(),
+        domain : domain.trim().toLowerCase()
       })
     }).then(r => r.blob());
 
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement("a"), {
-      href:url, download:`${domain || "appforge"}.zip`
+      href: url,
+      download: `${domain || "appforge"}.zip`
     }).click();
     URL.revokeObjectURL(url);
     setBusyZip(false);
@@ -148,9 +150,9 @@ export default function App() {
     copy(txt);
   };
 
-  /* ── navigation buttons (back / next) ─────────────────────── */
+  /* ── navigation buttons (back / next) ────────────────────── */
   const Nav = ({ nextOK = true }) => (
-    <div style={{ marginTop:"1rem" }}>
+    <div style={{ marginTop: "1rem" }}>
       <button className="btn-secondary" onClick={() => setStep(step - 1)}>
         ← Back
       </button>
@@ -161,7 +163,7 @@ export default function App() {
     </div>
   );
 
-  /* ── STEP RENDERER ────────────────────────────────────────── */
+  /* ── STEP RENDERER ───────────────────────────────────────── */
   function renderStep() {
     switch (step) {
 
@@ -383,7 +385,6 @@ export default function App() {
   /* ── RENDER ──────────────────────────────────────────────── */
   return (
     <div className="app-wrapper">
-
       {/* step tracker */}
       <div className="steps-nav">
         {stepsLbl.map((lbl, i) => (
