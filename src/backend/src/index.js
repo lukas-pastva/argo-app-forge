@@ -1,7 +1,11 @@
-import express from "express";
-import helmet  from "helmet";
+import express  from "express";
+import helmet   from "helmet";
+import fg       from "fast-glob";
+import path     from "node:path";
 import { listApps, buildZip } from "./zip.js";
-import cfg     from "./config.js";
+import { ensureRepo }  from "./git.js";
+import { genKeyPair }  from "./ssh.js";         // ← new
+import cfg      from "./config.js";
 
 const app = express();
 app.use(helmet());
@@ -31,6 +35,29 @@ app.post("/api/build", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+/* ── NEW: generate RSA key pair ─────────────────────────────── */
+app.get("/api/ssh-keygen", (_req, res) => {
+  try {
+    res.json(genKeyPair());
+  } catch (e) {
+    console.error("ssh-keygen error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ── NEW: list files under repo/scripts ─────────────────────── */
+app.get("/api/scripts", async (_req, res) => {
+  try {
+    const root  = await ensureRepo();
+    const dir   = path.join(root, "scripts");
+    const files = await fg("*", { cwd: dir, onlyFiles: true });
+    res.json(files);
+  } catch (e) {
+    console.error("scripts list error:", e);
+    res.json([]);
   }
 });
 
