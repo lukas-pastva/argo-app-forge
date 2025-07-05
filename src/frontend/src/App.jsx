@@ -3,71 +3,32 @@ import Spinner from "./components/Spinner.jsx";
 import "./App.css";
 
 /* ────────────────────────────────────────────────────────────
-   Helpers & regex
+   Helpers
    ────────────────────────────────────────────────────────── */
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 
 const toastDur  = 2000;
-const genToken  = () =>
-  crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const rand      = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const genToken  = () => rand() + rand();            // 2× for 24-ish chars
+const genPass   = () => rand();                     // 12-ish chars
 
 /* ────────────────────────────────────────────────────────────
-   Wizard steps: label  +  full-sentence description
+   Wizard steps (label + description)
    ────────────────────────────────────────────────────────── */
 const steps = [
-  {
-    label: "Welcome",
-    desc : "Overview of what AppForge does and how this wizard works."
-  },
-  {
-    label: "Domain",
-    desc : "Pick the main domain that will be substituted into every manifest."
-  },
-  {
-    label: "Repo",
-    desc : "Enter the SSH URL of the Git repository that will host the app-of-apps manifests."
-  },
-  {
-    label: "Apps",
-    desc : "Select the Helm Applications you actually want to deploy."
-  },
-  {
-    label: "ZIP",
-    desc : "Download the tailor-made ZIP containing only the apps you selected."
-  },
-  {
-    label: "Create repo",
-    desc : "Create (or empty) the destination Git repository."
-  },
-  {
-    label: "SSH keys",
-    desc : "Generate an SSH key pair that ArgoCD will use to push changes."
-  },
-  {
-    label: "Deploy key",
-    desc : "Install the public key as a deploy key (read/write) in the repo."
-  },
-  {
-    label: "SSH VMs",
-    desc : "Log into each VM that will join the RKE2 cluster."
-  },
-  {
-    label: "Scripts",
-    desc : "Download helper scripts for installing RKE2 and dependencies."
-  },
-  {
-    label: "RKE token",
-    desc : "Generate a bootstrap token so worker nodes can join the cluster."
-  },
-  {
-    label: "Run scripts",
-    desc : "Execute the install scripts on worker nodes first, then on control-plane nodes."
-  },
-  {
-    label: "Finish",
-    desc : "All done – review the summary or start again."
-  }
+  { label: "Welcome",     desc: "Overview of what AppForge does and how this wizard works." },
+  { label: "Domain",      desc: "Pick the main domain that will be substituted into every manifest." },
+  { label: "Repo",        desc: "Enter the SSH URL of the Git repository that will host the manifests." },
+  { label: "Apps",        desc: "Select the Helm Applications you actually want to deploy." },
+  { label: "ZIP",         desc: "Download the tailor-made ZIP containing only the apps you selected." },
+  { label: "Create repo", desc: "Create (or empty) the destination Git repository." },
+  { label: "Secrets",     desc: "Generate SSH keys, Rancher token and admin passwords for Argo CD, Keycloak and Rancher UI." },
+  { label: "Deploy key",  desc: "Install the public key as a deploy key (read/write) in the repo." },
+  { label: "SSH VMs",     desc: "Log into each VM that will join the RKE2 cluster." },
+  { label: "Scripts",     desc: "Download helper scripts for installing RKE2 and dependencies." },
+  { label: "Run scripts", desc: "Execute the install scripts on worker nodes first, then on control-plane nodes." },
+  { label: "Finish",      desc: "All done – review the summary or start again." }
 ];
 
 /* ────────────────────────────────────────────────────────────
@@ -78,15 +39,16 @@ export default function App() {
   /* ---------------- state ---------------------------------- */
   const [domain,  setDomain]   = useState("");
   const [repo,    setRepo]     = useState("");
-  const [apps,    setApps]     = useState([]);      // [{name,icon,…}]
+  const [apps,    setApps]     = useState([]);          // [{name,icon,…}]
   const [sel,     setSel]      = useState(new Set());
   const [open,    setOpen]     = useState(new Set());
 
-  const [keys,    setKeys]     = useState(null);    // {publicKey,privateKey}
-  const [scripts, setScripts]  = useState([]);
-  const [token,   setToken]    = useState("");
+  const [keys,        setKeys]   = useState(null);      // {publicKey,privateKey}
+  const [token,       setToken]  = useState("");        // Rancher bootstrap token
+  const [passwords,   setPwds]   = useState(null);      // {argocd,keycloak,rancher}
+  const [scripts,     setScripts]= useState([]);
 
-  const [step,    setStep]     = useState(0);
+  const [step,  setStep]     = useState(0);
 
   /* loaders */
   const [busyZip, setBusyZip]  = useState(false);
@@ -94,19 +56,16 @@ export default function App() {
   const [busyScp, setBusyScp]  = useState(false);
 
   /* toast */
-  const [msg,     setMsg]      = useState("");
-
-  /* ---------------- helpers -------------------------------- */
+  const [msg, setMsg] = useState("");
   const toast = t => { setMsg(t); setTimeout(() => setMsg(""), toastDur); };
 
+  /* copy helper */
   const copy = (txt, cls = "btn-copy") =>
-    navigator.clipboard
-      ?.writeText(txt)
-      .then(() => toast(cls.includes("key-copy") ? "Copied" : "Copied!"));
-
-  const copyBtn = (val, cls = "btn-copy") => (
-    <button className={cls} onClick={() => copy(val, cls)}>⧉</button>
-  );
+    navigator.clipboard?.writeText(txt).then(
+      () => toast(cls.includes("key-copy") ? "Copied" : "Copied!")
+    );
+  const copyBtn = (val, cls = "btn-copy") =>
+    <button className={cls} onClick={() => copy(val, cls)}>⧉</button>;
 
   /* one-liner helper for scripts */
   const oneLiner = n => [
@@ -116,9 +75,10 @@ export default function App() {
     `sudo bash ${n}`
   ].join("\n");
 
-  /* ---------------- bootstrap / side-effects --------------- */
+  /* ---------------- bootstrap ------------------------------ */
   useEffect(() => { fetch("/api/apps").then(r => r.json()).then(setApps); }, []);
 
+  /* fetch / generate scripts list when entering step 9 */
   useEffect(() => {
     if (step === 9 && !scripts.length && !busyScp) {
       setBusyScp(true);
@@ -129,43 +89,48 @@ export default function App() {
     }
   }, [step, scripts.length, busyScp]);
 
-  useEffect(() => { if (step === 10 && !token) setToken(genToken()); },
-            [step, token]);
-
+  /* generate everything inside the new Secrets step (index 6) */
   useEffect(() => {
-    if (step === 6 && !keys && !busyKey) {
+    if (step !== 6) return;
+
+    /* SSH key pair */
+    if (!keys && !busyKey) {
       setBusyKey(true);
       fetch("/api/ssh-keygen")
         .then(r => r.json())
         .then(setKeys)
         .finally(() => setBusyKey(false));
     }
-  }, [step, keys, busyKey]);
 
-  /* auto-download tailored ZIP immediately on entering step 4 */
+    /* Rancher token + admin passwords */
+    if (!token)   setToken(genToken());
+    if (!passwords) {
+      setPwds({
+        argocd : genPass(),
+        keycloak: genPass(),
+        rancher : genPass()
+      });
+    }
+  }, [step, keys, busyKey, token, passwords]);
+
+  /* ---------------- derived flags -------------------------- */
   const domainOK   = DOMAIN_RE.test(domain.trim());
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size > 0;
   const canZip     = domainOK && repoOK && appsChosen;
 
-  useEffect(() => {
-    if (step === 4 && canZip) buildZip();
-  }, [step, canZip]);
+  /* auto-download ZIP on entering step 4 */
+  useEffect(() => { if (step === 4 && canZip) buildZip(); }, [step, canZip]);
 
-  /* ---------------- selection toggles ---------------------- */
+  /* ---------------- handlers ------------------------------- */
   const toggleSel  = n => {
-    const s = new Set(sel);
-    s.has(n) ? s.delete(n) : s.add(n);
-    setSel(s);
+    const s = new Set(sel); s.has(n) ? s.delete(n) : s.add(n); setSel(s);
   };
   const toggleOpen = n => {
-    const s = new Set(open);
-    s.has(n) ? s.delete(n) : s.add(n);
-    setOpen(s);
+    const s = new Set(open); s.has(n) ? s.delete(n) : s.add(n); setOpen(s);
   };
 
-  /* ---------------- misc helpers --------------------------- */
-  const regenKeys = () => {
+  const regenKeys  = () => {
     setBusyKey(true);
     fetch("/api/ssh-keygen")
       .then(r => r.json())
@@ -199,28 +164,21 @@ export default function App() {
     copy(txt);
   };
 
-  /* ---------------- navigation ----------------------------- */
+  /* ---------------- navigation buttons --------------------- */
   const Nav = ({ nextOK = true }) => (
     <div style={{ marginTop:"1rem" }}>
-      <button className="btn-secondary" onClick={() => setStep(step - 1)}>
-        ← Back
-      </button>
-      <button className="btn" disabled={!nextOK}
-              onClick={() => setStep(step + 1)}>
-        Next →
-      </button>
+      <button className="btn-secondary" onClick={() => setStep(step - 1)}>← Back</button>
+      <button className="btn" disabled={!nextOK} onClick={() => setStep(step + 1)}>Next →</button>
     </div>
   );
 
+  /* helper to render the little intro under every <h2> */
+  const Intro = ({ i }) => <p className="intro">{steps[i].desc}</p>;
+
   /* ---------------- step renderer -------------------------- */
   function renderStep() {
-    /* helper to show description under <h2> */
-    const Intro = ({i}) => (
-      <p className="intro" style={{ marginTop:"-.6rem" }}>{steps[i].desc}</p>
-    );
-
     switch (step) {
-      /* 0 ─ WELCOME ----------------------------------------- */
+      /* 0 ─ Welcome ---------------------------------------- */
       case 0: return <>
         <h2>{steps[0].label} to AppForge 🚀</h2>
         <p>{steps[0].desc}</p>
@@ -232,47 +190,42 @@ export default function App() {
         <button className="btn" onClick={() => setStep(1)}>Start →</button>
       </>;
 
-      /* 1 ─ DOMAIN ------------------------------------------ */
+      /* 1 ─ Domain ----------------------------------------- */
       case 1: return <>
-        <h2>Step 1 – {steps[1].label}</h2>
-        <Intro i={1}/>
+        <h2>Step 1 – {steps[1].label}</h2><Intro i={1}/>
         <input className="wizard-input" value={domain}
                onChange={e => setDomain(e.target.value.toLowerCase())}
-               placeholder="example.com" />
+               placeholder="example.com"/>
         {!domainOK && <p className="error">Enter a valid domain.</p>}
-        <button className="btn" disabled={!domainOK}
-                onClick={() => setStep(2)}>Next →</button>
+        <button className="btn" disabled={!domainOK} onClick={() => setStep(2)}>Next →</button>
       </>;
 
-      /* 2 ─ REPO -------------------------------------------- */
+      /* 2 ─ Repo ------------------------------------------- */
       case 2: return <>
-        <h2>Step 2 – {steps[2].label}</h2>
-        <Intro i={2}/>
+        <h2>Step 2 – {steps[2].label}</h2><Intro i={2}/>
         <input className="wizard-input" value={repo}
                onChange={e => setRepo(e.target.value)}
-               placeholder="git@host:group/repo.git" />
+               placeholder="git@host:group/repo.git"/>
         {!repoOK && <p className="error">Enter a valid SSH repository URL.</p>}
         <Nav nextOK={repoOK}/>
       </>;
 
-      /* 3 ─ APPS -------------------------------------------- */
+      /* 3 ─ Apps ------------------------------------------- */
       case 3: return <>
-        <h2>Step 3 – {steps[3].label}</h2>
-        <Intro i={3}/>
+        <h2>Step 3 – {steps[3].label}</h2><Intro i={3}/>
         <ul className="apps-list">
           {apps.map(a => {
+            const opened = open.has(a.name);
             const hasInfo = a.desc || a.maint || a.home || a.readme;
-            const opened  = open.has(a.name);
             return (
               <li key={a.name}>
                 <div className="app-item" data-selected={sel.has(a.name)}
                      onClick={() => toggleSel(a.name)}>
                   <input type="checkbox" readOnly checked={sel.has(a.name)}/>
-                  {a.icon ? <img src={a.icon} alt="" width={24} height={24}/>
-                          : "📦"}
+                  {a.icon ? <img src={a.icon} alt="" width={24} height={24}/> : "📦"}
                   <span className="app-name">{a.name}</span>
                   <button className="info-btn" disabled={!hasInfo}
-                          onClick={e => {e.stopPropagation();toggleOpen(a.name);}}>
+                          onClick={e => {e.stopPropagation(); toggleOpen(a.name);}}>
                     {opened ? "▲" : "ℹ️"}
                   </button>
                 </div>
@@ -292,74 +245,90 @@ export default function App() {
         <Nav nextOK={appsChosen}/>
       </>;
 
-      /* 4 ─ ZIP (auto-downloads) ----------------------------- */
+      /* 4 ─ ZIP -------------------------------------------- */
       case 4: return <>
-        <h2>Step 4 – {steps[4].label}</h2>
-        <Intro i={4}/>
+        <h2>Step 4 – {steps[4].label}</h2><Intro i={4}/>
         <p>The ZIP download should start automatically. If it doesn’t, click the button below.</p>
-        <button className="btn" disabled={busyZip || !canZip}
-                onClick={buildZip}>
+        <button className="btn" disabled={busyZip || !canZip} onClick={buildZip}>
           {busyZip ? <Spinner size={18}/> : "Download ZIP"}
         </button>
         <Nav/>
       </>;
 
-      /* 5 ─ CREATE REPO ------------------------------------- */
+      /* 5 ─ Create repo ------------------------------------ */
       case 5: return <>
-        <h2>Step 5 – {steps[5].label}</h2>
-        <Intro i={5}/>
+        <h2>Step 5 – {steps[5].label}</h2><Intro i={5}/>
         <p>Create (or empty) the repository that will host the <code>app-of-apps</code> manifests.</p>
         <Nav/>
       </>;
 
-      /* 6 ─ SSH KEYS --------------------------------------- */
+      /* 6 ─ Secrets  (SSH keys + Rancher token + admin pwds) */
       case 6: return <>
-        <h2>Step 6 – {steps[6].label}</h2>
-        <Intro i={6}/>
-        {(!keys || busyKey)
+        <h2>Step 6 – {steps[6].label}</h2><Intro i={6}/>
+        {(!keys || !passwords || busyKey)
           ? <Spinner size={32}/>
           : <>
-              <label>Public key</label>
+              {/* SSH keys */}
+              <label>SSH public key</label>
               <div className="key-wrap">
                 <pre className="key-block pub">{keys.publicKey}</pre>
                 {copyBtn(keys.publicKey,"btn-copy key-copy")}
               </div>
 
-              <label style={{marginTop:"1rem"}}>Private key</label>
+              <label style={{marginTop:"1rem"}}>SSH private key</label>
               <div className="key-wrap">
                 <pre className="key-block priv">{keys.privateKey}</pre>
                 {copyBtn(keys.privateKey,"btn-copy key-copy")}
               </div>
 
-              <button className="btn-secondary" onClick={regenKeys}>
-                Regenerate keys
-              </button>
+              {/* Rancher token */}
+              <label style={{marginTop:"1.2rem"}}>Rancher bootstrap token</label>
+              <div className="key-wrap">
+                <pre className="key-block pub">{token}</pre>
+                {copyBtn(token,"btn-copy key-copy")}
+              </div>
+
+              {/* admin passwords */}
+              <h3 style={{margin:"1.6rem 0 .6rem"}}>Admin passwords</h3>
+              <table className="summary-table">
+                <tbody>
+                  <tr><th>Argo CD</th>   <td>{passwords.argocd}</td>
+                                          <td>{copyBtn(passwords.argocd,"tiny-btn")}</td></tr>
+                  <tr><th>Keycloak</th>  <td>{passwords.keycloak}</td>
+                                          <td>{copyBtn(passwords.keycloak,"tiny-btn")}</td></tr>
+                  <tr><th>Rancher</th>   <td>{passwords.rancher}</td>
+                                          <td>{copyBtn(passwords.rancher,"tiny-btn")}</td></tr>
+                </tbody>
+              </table>
+
+              <button className="btn-secondary" style={{marginTop:".8rem"}} onClick={()=>{
+                setToken(genToken());
+                setPwds({ argocd:genPass(), keycloak:genPass(), rancher:genPass() });
+              }}>Regenerate all secrets</button>
+
               <Nav/>
             </>
         }
       </>;
 
-      /* 7 ─ DEPLOY KEY -------------------------------------- */
+      /* 7 ─ Deploy key ------------------------------------- */
       case 7: return <>
-        <h2>Step 7 – {steps[7].label}</h2>
-        <Intro i={7}/>
+        <h2>Step 7 – {steps[7].label}</h2><Intro i={7}/>
         <p>Add the public key above as a deploy key (read/write) in the app-of-apps repo.</p>
         {keys && copyBtn(keys.publicKey,"btn-copy key-copy")}
         <Nav/>
       </>;
 
-      /* 8 ─ SSH VMs ----------------------------------------- */
+      /* 8 ─ SSH VMs ---------------------------------------- */
       case 8: return <>
-        <h2>Step 8 – {steps[8].label}</h2>
-        <Intro i={8}/>
+        <h2>Step 8 – {steps[8].label}</h2><Intro i={8}/>
         <p>Log into every VM that will join the RKE2 cluster.</p>
         <Nav/>
       </>;
 
-      /* 9 ─ SCRIPTS ----------------------------------------- */
+      /* 9 ─ Scripts ---------------------------------------- */
       case 9: return <>
-        <h2>Step 9 – {steps[9].label}</h2>
-        <Intro i={9}/>
+        <h2>Step 9 – {steps[9].label}</h2><Intro i={9}/>
         {busyScp
           ? <Spinner size={28}/>
           : <table className="scripts-table">
@@ -379,32 +348,17 @@ export default function App() {
         <Nav/>
       </>;
 
-      /* 10 ─ RKE TOKEN -------------------------------------- */
+      /* 10 ─ Run scripts ----------------------------------- */
       case 10: return <>
-        <h2>Step 10 – {steps[10].label}</h2>
-        <Intro i={10}/>
-        <div className="key-wrap">
-          <pre className="key-block pub">{token}</pre>
-          {copyBtn(token,"btn-copy key-copy")}
-        </div>
-        <button className="btn-secondary" style={{marginTop:".8rem"}}
-                onClick={()=>setToken(genToken())}>Regenerate</button>
-        <Nav/>
-      </>;
-
-      /* 11 ─ RUN SCRIPTS ------------------------------------ */
-      case 11: return <>
-        <h2>Step 11 – {steps[11].label}</h2>
-        <Intro i={11}/>
+        <h2>Step 10 – {steps[10].label}</h2><Intro i={10}/>
         <p>Run the install scripts on <strong>worker</strong> nodes first,
            then on the <strong>control-plane</strong> nodes.</p>
         <Nav/>
       </>;
 
-      /* 12 ─ FINISH ----------------------------------------- */
+      /* 11 ─ Finish ---------------------------------------- */
       default: return <>
-        <h2>Step 12 – {steps[12].label} 🎉</h2>
-        <Intro i={12}/>
+        <h2>Step 11 – {steps[11].label} 🎉</h2><Intro i={11}/>
         <h3>Overview</h3>
         <table className="summary-table">
           <tbody>
@@ -417,12 +371,17 @@ export default function App() {
                                         <td>{keys && copyBtn(keys.publicKey,"tiny-btn")}</td></tr>
             <tr><th>SSH private key</th><td style={{wordBreak:"break-all"}}>{keys?.privateKey || "—"}</td>
                                         <td>{keys && copyBtn(keys.privateKey,"tiny-btn")}</td></tr>
-            <tr><th>RKE token</th>     <td>{token || "—"}</td>
+            <tr><th>Rancher token</th> <td>{token || "—"}</td>
                                         <td>{token && copyBtn(token,"tiny-btn")}</td></tr>
+            <tr><th>Argo CD admin</th> <td>{passwords?.argocd || "—"}</td>
+                                        <td>{passwords && copyBtn(passwords.argocd,"tiny-btn")}</td></tr>
+            <tr><th>Keycloak admin</th><td>{passwords?.keycloak || "—"}</td>
+                                        <td>{passwords && copyBtn(passwords.keycloak,"tiny-btn")}</td></tr>
+            <tr><th>Rancher admin</th> <td>{passwords?.rancher || "—"}</td>
+                                        <td>{passwords && copyBtn(passwords.rancher,"tiny-btn")}</td></tr>
           </tbody>
         </table>
-        <button className="btn" style={{marginTop:"1.2rem"}}
-                onClick={()=>setStep(0)}>Start again</button>
+        <button className="btn" style={{marginTop:"1.2rem"}} onClick={()=>setStep(0)}>Start again</button>
       </>;
     }
   }
