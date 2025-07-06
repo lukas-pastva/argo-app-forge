@@ -99,14 +99,18 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const root  = await ensureRepo();
   const files = await appFiles(root);
 
-  /* which chart paths are really referenced? */
+  /* which chart paths are really referenced?  (collect *both* possible locations) */
   const needed = new Set();
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
     for (const proj of doc.appProjects||[])
       for (const app of proj.applications||[])
-        if (keepNames.includes(app.name) && app.path)
-          needed.add(app.path.replace(/^\.?\/*/,""));
+        if (keepNames.includes(app.name) && app.path){
+          const p = app.path.replace(/^\.?\/*/,"");   // canonical
+          needed.add(p);                              // e.g.  external/foo/bar
+          if (p.startsWith("external/"))              // also charts/external/foo/bar
+            needed.add(path.posix.join("charts", p));
+        }
   }
 
   /* working copy ── skip ALL “.git” directories right here */
@@ -141,9 +145,18 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
     if (!keepNames.includes(path.basename(rel,".yaml")))
       await fs.rm(path.join(tmp,rel));
 
-  /* prune charts/external that are NOT in “needed” */
-  for (const d of await fg(["charts/external/*/*/*","external/*/*/*"],{cwd:tmp,onlyDirectories:true}))
-    if (!needed.has(d)) await fs.rm(path.join(tmp,d),{recursive:true,force:true});
+  /* prune charts/external that are NOT in “needed” (prefix-aware) */
+  const dirs = await fg(
+    ["charts/external/**", "external/**"],      // get *all* nested dirs
+    { cwd: tmp, onlyDirectories: true }
+  );
+
+  for (const d of dirs){
+    const keep = [...needed].some(n => d === n || d.startsWith(n + "/"));
+    if (!keep){
+      await fs.rm(path.join(tmp, d), { recursive: true, force: true });
+    }
+  }
 
   /* multi-token replacement ----------------------------------- */
   const replacements = [];
