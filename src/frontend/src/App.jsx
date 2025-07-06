@@ -13,6 +13,37 @@ const rand      = () =>
 const genToken  = () => rand() + rand();
 const genPass   = () => rand();
 
+/* ── NEW: pick a unique heredoc delimiter ─────────────────── */
+function pickDelimiter(body, base = "EOF") {
+  if (!body.includes(`\n${base}\n`)) return base;
+  while (true) {
+    const random = `${base}_${rand().slice(0, 6).toUpperCase()}`;
+    if (!body.includes(`\n${random}\n`)) return random;
+  }
+}
+
+/* ── one-liner helpers (updated) ───────────────────────────── */
+const oneLiner = (n, body) => {
+  const delim = pickDelimiter(body);
+  return [
+    `cat <<'${delim}' > ${n}`,
+    body.trimEnd(),
+    delim,
+    `sudo bash ${n}`,
+  ].join("\n");
+};
+
+const oneLinerSecrets = (n, body, priv, rancherToken) =>
+  [
+    `export RANCHER_TOKEN="${rancherToken}"`,
+    `export ARGOCD_PASS="${priv.argocd}"`,
+    `export KEYCLOAK_PASS="${priv.keycloak}"`,
+    `export RANCHER_PASS="${priv.rancher}"`,
+    `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
+    "",
+    oneLiner(n, body),
+  ].join("\n");
+
 /* ── steps meta ────────────────────────────────────────────── */
 const steps = [
   { label: "Welcome",    desc: "Tiny tour of the whole flow." },
@@ -68,25 +99,6 @@ function CopyBtn({
     </button>
   );
 }
-
-/* one-liner helpers --------------------------------------- */
-const oneLiner = (n, body) =>
-  [
-    `cat <<"EOF" > ${n}`,
-    body.trimEnd(),
-    "EOF",
-    `sudo bash ${n}`,
-  ].join("\n");
-
-const oneLinerSecrets = (n, body, priv) =>
-  [
-    `export ARGOCD_PASS="${priv.argocd}"`,
-    `export KEYCLOAK_PASS="${priv.keycloak}"`,
-    `export RANCHER_PASS="${priv.rancher}"`,
-    `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
-    "",
-    oneLiner(n, body),
-  ].join("\n");
 
 /* ─────────────────────────────────────────────────────────── */
 export default function App() {
@@ -199,7 +211,12 @@ export default function App() {
   };
   const copySecretLn = async (n) => {
     const body = await getFile(n);
-    const txt = oneLinerSecrets(n, body, { ...pwds, ssh: keys?.privateKey || "" });
+    const txt = oneLinerSecrets(
+      n,
+      body,
+      { ...pwds, ssh: keys?.privateKey || "" },
+      token
+    );
     await copyText(txt);
     toast("Copied secrets one-liner!");
   };
