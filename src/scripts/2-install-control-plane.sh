@@ -77,6 +77,9 @@ ARGOCD_HASH="$(
 mkdir -p /etc/rancher/rke2/
 cat <<EOF >/etc/rancher/rke2/config.yaml
 token: ${TOKEN}
+
+node-taint:
+  - "CriticalAddonsOnly=true:NoExecute"
 cni:
   - cilium
 disable:
