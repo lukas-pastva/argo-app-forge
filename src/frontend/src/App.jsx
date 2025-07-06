@@ -29,7 +29,7 @@ const oneLiner = (n, body) => {
     `cat <<'${delim}' > ${n}`,
     body.trimEnd(),
     delim,
-    `sudo bash ${n}`,
+    `sudo -E bash ${n}`,
   ].join("\n");
 };
 
