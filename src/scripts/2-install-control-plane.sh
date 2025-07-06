@@ -218,31 +218,11 @@ if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
 fi
 
 ###############################################################################
-# HISTORY WIPE  (invoking user and root)
+# All done!
 ###############################################################################
-echo "Wiping shell history…"
-{
-  unset HISTFILE
-  history -c 2>/dev/null || true
-
-  wipe() {                   # truncate & divert future writes
-    local f="$1"; [ -e "$f" ] || return
-    : > "$f" || true
-    ln -sf /dev/null "$f" 2>/dev/null || true
-  }
-
-  wipe "$HOME/.bash_history"                 # current (root) shell
-  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    u_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-    wipe "${u_home}/.bash_history"
-  fi
-} 2>/dev/null || true
-
-###############################################################################
-# Self-destruct
-###############################################################################
-rm -- "$0" 2>/dev/null || true
-
 echo
 echo "🎉  Installation finished."
 echo "    kubeconfig for ${KUBE_USER}: $KUBE_DIR/config"
+
+# ── self-destruct ────────────────────────────────────────────────────────────
+rm -- "$0" 2>/dev/null || true

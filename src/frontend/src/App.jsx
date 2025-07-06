@@ -33,7 +33,7 @@ const oneLiner = (n, body) => {
   ].join("\n");
 };
 
-/*  ⬇️  UPDATED: optional installRancher flag  */
+/*  ⬇️  UPDATED: now adds INSTALL_RANCHER flag *and* wipes history  */
 const oneLinerSecrets = (
   n,
   body,
@@ -55,7 +55,17 @@ const oneLinerSecrets = (
     lines.push(`export INSTALL_RANCHER="true"`);
   }
 
+  /* script body (written → sudo-run) */
   lines.push("", oneLiner(n, body));
+
+  /* 🔒 final step – nuke this shell’s history so the secret
+     export lines don’t get saved to ~/.bash_history            */
+  lines.push(
+    "",
+    "# wipe the interactive shell history (non-sudo user)",
+    "unset HISTFILE && history -c || true",
+  );
+
   return lines.join("\n");
 };
 
