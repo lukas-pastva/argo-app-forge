@@ -2,9 +2,12 @@
 set -euo pipefail
 
 ###############################################################################
-# Preconditions
+# Preconditions – auto-escalate
 ###############################################################################
-(( EUID == 0 )) || { echo "ERROR: run as root." >&2; exit 1; }
+if (( EUID != 0 )); then
+  echo "⎈  Not running as root – re-launching with sudo…"
+  exec sudo -E bash "$0" "$@"
+fi
 
 ###############################################################################
 # Variables
@@ -14,14 +17,9 @@ USER_HOME="$(getent passwd "$KUBE_USER" | cut -d: -f6)"
 KUBE_DIR="$USER_HOME/.kube"
 ADMIN_KUBECONFIG="/etc/rancher/rke2/rke2.yaml"
 
-# RKE2 cluster-join token
 TOKEN="${RANCHER_TOKEN:-}"
-
-# NEW – Git repo URL + private key for Argo CD
 GIT_REPO_URL="${GIT_REPO_URL:-}"
 SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}"
-
-# Optional admin passwords (may also be passed as env-vars / one-liner)
 ARGOCD_PASS="${ARGOCD_PASS:-}"
 RANCHER_PASS="${RANCHER_PASS:-}"
 
@@ -178,18 +176,27 @@ if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
   echo "✔ Rancher bootstrap-secret created/updated."
 fi
 
-###############################################################################
-# HISTORY WIPE (root + invoking user)
-###############################################################################
-echo "Wiping shell history…"
-unset HISTFILE
-history -c 2>/dev/null || true
-for h in /root/.bash_history "/home/${KUBE_USER}"/.bash_history; do
-  [ -f "$h" ] && rm -f "$h"
-done
 
 ###############################################################################
-# Self-destruct: delete this script
+# HISTORY WIPE (invoking user + root)
+###############################################################################
+echo "Wiping shell history…"
+{
+  unset HISTFILE
+  history -c 2>/dev/null || true
+
+  wipe() {                          # truncate & divert future writes
+    local f="$1"; [ -e "$f" ] || return
+    : > "$f" || true
+    ln -sf /dev/null "$f" 2>/dev/null || true
+  }
+
+  wipe "${USER_HOME}/.bash_history"
+  [ -f /root/.bash_history ] && wipe /root/.bash_history
+} 2>/dev/null || true
+
+###############################################################################
+# Self-destruct
 ###############################################################################
 rm -- "$0" 2>/dev/null || true
 
