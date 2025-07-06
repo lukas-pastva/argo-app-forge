@@ -67,44 +67,47 @@ chmod 600 "${KUBE_DIR}/config"
 echo "Waiting for Kubernetes API..."
 until kubectl version --short >/dev/null 2>&1; do sleep 5; done
 
-# 11) Install Argo CD via Helm
-echo "Installing Argo CD in namespace argocd..."
-kubectl create ns argocd
+###############################################################################
+# 11) Argo CD installation with predefined admin password                     #
+###############################################################################
+if [[ -z "${ARGOCD_PASS:-}" ]]; then
+  read -s -p "Enter desired Argo CD admin password: " ARGOCD_PASS
+  echo
+fi
+
+echo "Installing Argo CD in namespace argocd…"
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
-helm -n argocd upgrade --install argocd argo/argo-cd --version 8.1.2
 
-# 12) Retrieve & show initial admin password
-echo
-echo "===== Argo CD initial admin password ====="
-PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-echo "${PASSWORD}"
-echo "=========================================="
-echo
-read -p "Press [ENTER] once you've copied the password to delete the secret..." _
+helm upgrade --install argocd argo/argo-cd \
+  --namespace argocd --create-namespace \
+  --version 8.1.2 \
+  --set configs.secret.createSecret=true \
+  --set-string configs.secret.argocdServerAdminPassword="${ARGOCD_PASS}"
 
-# 13) Securely delete the secret
-kubectl -n argocd delete secret argocd-initial-admin-secret
-echo "Argo CD initial-admin-secret has been deleted."
+echo
+echo "✔ Argo CD installed."
+echo "   Username: admin"
+echo "   Password: ${ARGOCD_PASS}"
+echo
 
 ###############################################################################
-# 14) OPTIONAL – Rancher bootstrap (only if Rancher was picked in AppForge)   #
+# 12) OPTIONAL – Rancher bootstrap (only if Rancher was picked in AppForge)   #
 ###############################################################################
 if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
-  echo
   echo "Setting up Rancher bootstrap secret…"
 
-  # 14.1) Ask for password if not provided
+  # Ask for password if not provided
   if [[ -z "${RANCHER_PASS:-}" ]]; then
     read -s -p "Enter Rancher admin password (bootstrapPassword): " RANCHER_PASS
     echo
   fi
 
-  # 14.2) Make sure the cattle-system namespace exists (idempotent)
+  # Make sure the cattle-system namespace exists (idempotent)
   kubectl get namespace cattle-system >/dev/null 2>&1 || \
     kubectl create namespace cattle-system
 
-  # 14.3) Create or update the bootstrap-secret with the password
+  # Create or update the bootstrap-secret with the password
   kubectl -n cattle-system create secret generic bootstrap-secret \
     --from-literal=bootstrapPassword="${RANCHER_PASS}" \
     --dry-run=client -o yaml | kubectl apply -f -
