@@ -33,8 +33,9 @@ const oneLiner = (n, body) => {
   ].join("\n");
 };
 
-const oneLinerSecrets = (n, body, priv, rancherToken) =>
+const oneLinerSecrets = (n, body, priv, rancherToken, gitRepoUrl) =>
   [
+    `export GIT_REPO_URL="${gitRepoUrl}"`,          // ⬅️ NEW
     `export RANCHER_TOKEN="${rancherToken}"`,
     `export ARGOCD_PASS="${priv.argocd}"`,
     `export KEYCLOAK_PASS="${priv.keycloak}"`,
@@ -43,6 +44,7 @@ const oneLinerSecrets = (n, body, priv, rancherToken) =>
     "",
     oneLiner(n, body),
   ].join("\n");
+
 
 /* ── steps meta ────────────────────────────────────────────── */
 const steps = [
