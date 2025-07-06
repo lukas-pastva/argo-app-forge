@@ -217,7 +217,7 @@ export default function App() {
       n,
       body,
       { ...pwds, ssh: keys?.privateKey || "" },
-      token.
+      token,
       repo.trim()
     );
     await copyText(txt);
