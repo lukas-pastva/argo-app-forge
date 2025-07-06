@@ -2,6 +2,7 @@
     ───────────────────────────────────────────────────────────────
     • listApps() → returns rich meta (icon, desc, …)
     • buildZip() → prunes charts/external to only referenced paths
+                    (except: we no longer delete remote-chart dirs)
 */
 
 import fs       from "fs/promises";
@@ -91,7 +92,7 @@ export async function listApps(){
   return [...map.entries()].map(([name,meta]) => ({ name, ...meta }));
 }
 
-/* ── 2)  Build ZIP (filters values + charts) ────────────────── */
+/* ── 2)  Build ZIP ──────────────────────────────────────────── */
 // keepNames     … array of Application names to keep
 // repoReplace   … actual repo URL entered in the wizard (for ${REPO_TOKEN_INPUT})
 // domainReplace … domain entered in the wizard     (for ${DOMAIN_TOKEN_INPUT})
@@ -145,18 +146,12 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
     if (!keepNames.includes(path.basename(rel,".yaml")))
       await fs.rm(path.join(tmp,rel));
 
-  /* prune charts/external that are NOT in “needed” (prefix-aware) */
-  const dirs = await fg(
-    ["charts/external/**", "external/**"],      // get *all* nested dirs
-    { cwd: tmp, onlyDirectories: true }
-  );
-
-  for (const d of dirs){
-    const keep = [...needed].some(n => d === n || d.startsWith(n + "/"));
-    if (!keep){
-      await fs.rm(path.join(tmp, d), { recursive: true, force: true });
-    }
-  }
+  /* -----------------------------------------------------------------------
+     ⬇️  IMPORTANT CHANGE –––
+     We *keep* every directory under external/** and charts/external/**.
+     The earlier logic that deleted unreferenced dirs is gone, so
+     remote charts (that have no .path) remain intact in the ZIP.
+     --------------------------------------------------------------------- */
 
   /* multi-token replacement ----------------------------------- */
   const replacements = [];
