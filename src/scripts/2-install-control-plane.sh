@@ -87,10 +87,36 @@ read -p "Press [ENTER] once you've copied the password to delete the secret..." 
 kubectl -n argocd delete secret argocd-initial-admin-secret
 echo "Argo CD initial-admin-secret has been deleted."
 
+###############################################################################
+# 14) OPTIONAL – Rancher bootstrap (only if Rancher was picked in AppForge)   #
+###############################################################################
+if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
+  echo
+  echo "Setting up Rancher bootstrap secret…"
+
+  # 14.1) Ask for password if not provided
+  if [[ -z "${RANCHER_PASS:-}" ]]; then
+    read -s -p "Enter Rancher admin password (bootstrapPassword): " RANCHER_PASS
+    echo
+  fi
+
+  # 14.2) Make sure the cattle-system namespace exists (idempotent)
+  kubectl get namespace cattle-system >/dev/null 2>&1 || \
+    kubectl create namespace cattle-system
+
+  # 14.3) Create or update the bootstrap-secret with the password
+  kubectl -n cattle-system create secret generic bootstrap-secret \
+    --from-literal=bootstrapPassword="${RANCHER_PASS}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  echo "✔ Rancher bootstrap-secret created/updated."
+fi
+###############################################################################
+
 echo
-echo "✔ RKE2, kubectl, k9s, Helm, and Argo CD are all installed."
+echo "✔ RKE2, kubectl, k9s, Helm, Argo CD and (optionally) Rancher bootstrap are installed."
 echo "✔ kubeconfig is at ${KUBE_DIR}/config (owned by ${KUBE_USER})."
-echo "You can now interact with your cluster and Argo CD:"
+echo "You can now interact with your cluster:"
 echo "  kubectl get nodes"
 echo "  k9s"
 echo "  helm -n argocd list"
