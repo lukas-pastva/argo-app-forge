@@ -33,18 +33,31 @@ const oneLiner = (n, body) => {
   ].join("\n");
 };
 
-const oneLinerSecrets = (n, body, priv, rancherToken, gitRepoUrl) =>
-  [
-    `export GIT_REPO_URL="${gitRepoUrl}"`,          // ⬅️ NEW
+/*  ⬇️  UPDATED: optional installRancher flag  */
+const oneLinerSecrets = (
+  n,
+  body,
+  priv,
+  rancherToken,
+  gitRepoUrl,
+  installRancher = false,
+) => {
+  const lines = [
+    `export GIT_REPO_URL="${gitRepoUrl}"`,
     `export RANCHER_TOKEN="${rancherToken}"`,
     `export ARGOCD_PASS="${priv.argocd}"`,
     `export KEYCLOAK_PASS="${priv.keycloak}"`,
     `export RANCHER_PASS="${priv.rancher}"`,
     `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
-    "",
-    oneLiner(n, body),
-  ].join("\n");
+  ];
 
+  if (installRancher) {
+    lines.push(`export INSTALL_RANCHER="true"`);
+  }
+
+  lines.push("", oneLiner(n, body));
+  return lines.join("\n");
+};
 
 /* ── steps meta ────────────────────────────────────────────── */
 const steps = [
@@ -213,12 +226,19 @@ export default function App() {
   };
   const copySecretLn = async (n) => {
     const body = await getFile(n);
+
+    /* 📌 Detect if Rancher app was selected ----------------- */
+    const installRancher = [...sel].some((a) =>
+      a.toLowerCase().includes("rancher"),
+    );
+
     const txt = oneLinerSecrets(
       n,
       body,
       { ...pwds, ssh: keys?.privateKey || "" },
       token,
-      repo.trim()
+      repo.trim(),
+      installRancher,
     );
     await copyText(txt);
     toast("Copied secrets one-liner!");
@@ -246,8 +266,7 @@ export default function App() {
       </button>
       {next && (
         <button className="btn" onClick={() => setStep(step + 1)}>
-          Next →
-        </button>
+          Next →</button>
       )}
     </div>
   );
