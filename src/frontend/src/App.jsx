@@ -145,10 +145,10 @@ export default function App() {
       .finally(() => setBusyScp(false));
   }, [step, scripts.length, busyScp]);
 
-  /* generate secrets on entering step 5 --------------------- */
+  /* 🔄 generate secrets only once when first landing on Step 5 */
   useEffect(() => {
-    if (step === 5) regenAll();
-  }, [step]);
+    if (step === 5 && !keys) regenAll();
+  }, [step, keys]);
 
   /* derived ------------------------------------------------- */
   const domainOK   = DOMAIN_RE.test(domain.trim());
