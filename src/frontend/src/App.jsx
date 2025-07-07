@@ -86,10 +86,10 @@ const oneLinerSecrets = (
       const sec = oauth2Secrets[name] || {};
 
       lines.push(
-        `export OAUTH2_${env}_CLIENT_ID="${sec.clientId}"`,
-        `export OAUTH2_${env}_CLIENT_SECRET="${sec.clientSecret}"`,
-        `export OAUTH2_${env}_COOKIE_SECRET="${sec.cookieSecret}"`,
-        `export OAUTH2_${env}_REDIS_PASSWORD="${sec.redisPassword}"`,
+        `export ${env}_CLIENT_ID="${sec.clientId}"`,
+        `export ${env}_CLIENT_SECRET="${sec.clientSecret}"`,
+        `export ${env}_COOKIE_SECRET="${sec.cookieSecret}"`,
+        `export ${env}_REDIS_PASSWORD="${sec.redisPassword}"`,
       );
     }
   }
