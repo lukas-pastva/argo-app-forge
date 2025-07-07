@@ -2,18 +2,18 @@
 set -euo pipefail
 
 ###############################################################################
-# 2-install-control-plane.sh
+# 1-install-control-plane.sh
 # ────────────────────────────────────────────────────────────────────────────
 # Installs an RKE2 control-plane node, Argo CD, bootstraps your Git repo,
 # and (optionally) seeds Rancher on the same cluster.
 #
 # Environment variables you can pre-seed:
-#   RANCHER_TOKEN       –  RKE2 cluster-join token
-#   GIT_REPO_URL        –  SSH URL of your Git repo (e.g. git@host:org/repo.git)
-#   SSH_PRIVATE_KEY     –  private key that grants read-write access to repo
-#   ARGOCD_PASS         –  desired Argo CD *admin* password (plain text)
-#   RANCHER_PASS        –  desired Rancher admin password
-#   INSTALL_RANCHER     –  "true" → also install Rancher & bootstrap password
+#   RANCHER_TOKEN       – RKE2 cluster-join token
+#   GIT_REPO_URL        – SSH URL of your Git repo (e.g. git@host:org/repo.git)
+#   SSH_PRIVATE_KEY     – private key that grants read-write access to repo
+#   ARGOCD_PASS         – desired Argo CD *admin* password (plain text)
+#   RANCHER_PASS        – desired Rancher admin password
+#   INSTALL_RANCHER     – "true" → also install Rancher & bootstrap password
 ###############################################################################
 
 ###############################################################################
@@ -38,13 +38,13 @@ SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}"
 ARGOCD_PASS="${ARGOCD_PASS:-}"
 RANCHER_PASS="${RANCHER_PASS:-}"
 
-[[ -z "$TOKEN"        ]] && read -s -p "Enter RKE2 join token                : " TOKEN && echo
-[[ -z "$GIT_REPO_URL" ]] && read    -p "Enter Git repo SSH URL             : " GIT_REPO_URL
+[[ -z "$TOKEN"        ]] && read -s -p "Enter RKE2 join token                 : " TOKEN && echo
+[[ -z "$GIT_REPO_URL" ]] && read    -p "Enter Git repo SSH URL              : " GIT_REPO_URL
 if [[ -z "$SSH_PRIVATE_KEY" ]]; then
   echo "Paste SSH private key, end with EOF (Ctrl-D):"
   SSH_PRIVATE_KEY="$(cat)"
 fi
-[[ -z "$ARGOCD_PASS"  ]] && read -s -p "Enter desired Argo CD admin password: " ARGOCD_PASS && echo
+[[ -z "$ARGOCD_PASS"  ]] && read -s -p "Enter desired Argo CD admin password : " ARGOCD_PASS && echo
 
 ###############################################################################
 # Ensure *htpasswd* is available (apache2-utils or httpd-tools)
@@ -165,7 +165,7 @@ echo "Bootstrapping app-of-apps…"
 
 sleep 10
 
-# ⬇️  If the “default” AppProject already exists, do NOT recreate it
+# ⬇ If the “default” AppProject already exists, do NOT recreate it
 if ! kubectl get appproject default -n argocd >/dev/null 2>&1; then
 cat <<EOF | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1

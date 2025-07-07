@@ -1,5 +1,5 @@
 /*  src/frontend/src/App.jsx  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Spinner     from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
@@ -55,11 +55,10 @@ const oneLinerSecrets = (
     lines.push(`export INSTALL_RANCHER="true"`);
   }
 
-  /* script body (written → sudo-run) */
+  /* write script → sudo-run */
   lines.push("", oneLiner(n, body));
 
-  /* 🔒 final step – nuke this shell’s history so the secret
-     export lines don’t get saved to ~/.bash_history            */
+  /* 🔒 wipe this shell’s history so secrets don’t stay in ~/.bash_history */
   lines.push(
     "",
     "# wipe the interactive shell history (non-sudo user)",
@@ -69,39 +68,35 @@ const oneLinerSecrets = (
   return lines.join("\n");
 };
 
-/* ── steps meta ────────────────────────────────────────────── */
-const steps = [
-  { label: "Welcome",    desc: "Tiny tour of the whole flow." },
-  { label: "Domain",     desc: "Domain injected into manifests." },
-  { label: "Repo",       desc: "SSH URL of your Git repo." },
-  { label: "Apps",       desc: "Pick the Helm apps you need." },
-  { label: "ZIP + Repo", desc: "Download ZIP, push to repo." },
-  { label: "Secrets",    desc: "SSH keys, token & admin passwords." },
-  { label: "Deploy key", desc: "Add the SSH key to the repo." },
-  { label: "SSH VMs",    desc: "Log into every RKE2 node." },
-  { label: "Scripts",    desc: "Helper install scripts." },
-  { label: "Overview",   desc: "Everything in one place." },
-];
-
-/* robust clipboard helper ---------------------------------- */
-async function copyText(txt) {
-  try {
-    await navigator.clipboard.writeText(txt);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = txt;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      document.execCommand("copy");
-    } catch {}
-    document.body.removeChild(ta);
-  }
+/* ── Async clipboard button with built-in loader ──────────── */
+function AsyncCopyBtn({
+  getText,
+  children = "⧉",
+  className = "tiny-btn",
+  onCopied,
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className={className}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const txt = await getText();
+          await copyText(txt);
+          onCopied?.();
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? <Spinner size={14} /> : children}
+    </button>
+  );
 }
 
-/* tiny button with built-in spinner ------------------------ */
+/* ── classic CopyBtn (unchanged) ──────────────────────────── */
 function CopyBtn({
   text,
   children = "⧉",
@@ -124,6 +119,38 @@ function CopyBtn({
     </button>
   );
 }
+
+/* robust clipboard helper ---------------------------------- */
+async function copyText(txt) {
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+    } catch {}
+    document.body.removeChild(ta);
+  }
+}
+
+/* ── steps meta ───────────────────────────────────────────── */
+const steps = [
+  { label: "Welcome",    desc: "Tiny tour of the whole flow." },
+  { label: "Domain",     desc: "Domain injected into manifests." },
+  { label: "Repo",       desc: "SSH URL of your Git repo." },
+  { label: "Apps",       desc: "Pick the Helm apps you need." },
+  { label: "ZIP + Repo", desc: "Download ZIP, push to repo." },
+  { label: "Secrets",    desc: "SSH keys, token & admin passwords." },
+  { label: "Deploy key", desc: "Add the SSH key to the repo." },
+  { label: "SSH VMs",    desc: "Log into every RKE2 node." },
+  { label: "Scripts",    desc: "Helper install scripts." },
+  { label: "Overview",   desc: "Everything in one place." },
+];
 
 /* ─────────────────────────────────────────────────────────── */
 export default function App() {
@@ -225,34 +252,7 @@ export default function App() {
   }
 
   /* script helpers ----------------------------------------- */
-  const getFile      = (n) => fetch(`/scripts/${n}`).then((r) => r.text());
-  const copyFile     = async (n) => {
-    await copyText(await getFile(n));
-    toast("Copied file!");
-  };
-  const copyPlain    = async (n) => {
-    await copyText(oneLiner(n, await getFile(n)));
-    toast("Copied one-liner!");
-  };
-  const copySecretLn = async (n) => {
-    const body = await getFile(n);
-
-    /* 📌 Detect if Rancher app was selected ----------------- */
-    const installRancher = [...sel].some((a) =>
-      a.toLowerCase().includes("rancher"),
-    );
-
-    const txt = oneLinerSecrets(
-      n,
-      body,
-      { ...pwds, ssh: keys?.privateKey || "" },
-      token,
-      repo.trim(),
-      installRancher,
-    );
-    await copyText(txt);
-    toast("Copied secrets one-liner!");
-  };
+  const getFile = (n) => fetch(`/scripts/${n}`).then((r) => r.text());
 
   /* selection helpers -------------------------------------- */
   const toggleSel = (n) => {
@@ -276,7 +276,8 @@ export default function App() {
       </button>
       {next && (
         <button className="btn" onClick={() => setStep(step + 1)}>
-          Next →</button>
+          Next →
+        </button>
       )}
     </div>
   );
@@ -570,64 +571,74 @@ export default function App() {
           </>
         );
 
-      /* 8 ─ Scripts --------------------------------------- */
-      case 8:
-        return (
-          <>
-            <h2>Step 8 – Helper scripts</h2>
-            <Intro i={8} />
-            {busyScp ? (
-              <Spinner size={28} />
-            ) : (
-              <table className="scripts-table">
-                <tbody>
-                  {scripts.map((s) => {
-                    const box = {
-                      display: "flex",
-                      gap: ".5rem",
-                      flexWrap: "wrap",
-                    };
-                    return (
-                      <tr key={s}>
-                        <td>
-                          <code>{s}</code>
-                        </td>
-                        <td style={box}>
-                          <a
-                            className="tiny-btn"
-                            href={`/scripts/${s}`}
-                            download
-                          >
-                            Download
-                          </a>
-                          <button
-                            className="tiny-btn"
-                            onClick={() => copyFile(s)}
-                          >
-                            ⧉ File
-                          </button>
-                          <button
-                            className="tiny-btn"
-                            onClick={() => copyPlain(s)}
-                          >
-                            ⧉ One-liner
-                          </button>
-                          <button
-                            className="tiny-btn"
-                            onClick={() => copySecretLn(s)}
-                          >
-                            ⧉ One-liner&nbsp;+&nbsp;secrets
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-            <Nav />
-          </>
-        );
+    /* 8 ─ Scripts ------------------------------------------ */
+    if (step === 8) {
+      return (
+        <>
+          <h2>Step 8 – Helper scripts</h2>
+          <Intro i={8} />
+          {busyScp ? (
+            <Spinner size={28} />
+          ) : (
+            <table className="scripts-table">
+              <tbody>
+                {scripts.map((s) => (
+                  <tr key={s}>
+                    <td>
+                      <code>{s}</code>
+                    </td>
+                    <td style={{ display: "flex", gap: ".5rem", flexWrap: "wrap" }}>
+                      {/* direct download */}
+                      <a className="tiny-btn" href={`/scripts/${s}`} download>
+                        Download
+                      </a>
+
+                      {/* ⧉ File */}
+                      <AsyncCopyBtn
+                        getText={() => getFile(s)}
+                        onCopied={() => toast("Copied file!")}
+                      >
+                        ⧉ File
+                      </AsyncCopyBtn>
+
+                      {/* ⧉ One-liner */}
+                      <AsyncCopyBtn
+                        getText={async () => oneLiner(s, await getFile(s))}
+                        onCopied={() => toast("Copied one-liner!")}
+                      >
+                        ⧉ One-liner
+                      </AsyncCopyBtn>
+
+                      {/* ⧉ One-liner + secrets */}
+                      <AsyncCopyBtn
+                        getText={async () => {
+                          const body = await getFile(s);
+                          const installRancher = [...sel].some((a) =>
+                            a.toLowerCase().includes("rancher"),
+                          );
+                          return oneLinerSecrets(
+                            s,
+                            body,
+                            { ...pwds, ssh: keys?.privateKey || "" },
+                            token,
+                            repo.trim(),
+                            installRancher,
+                          );
+                        }}
+                        onCopied={() => toast("Copied one-liner + secrets!")}
+                      >
+                        ⧉ One-liner&nbsp;+&nbsp;secrets
+                      </AsyncCopyBtn>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <Nav />
+        </>
+      );
+    }
 
       /* 9 ─ Overview -------------------------------------- */
       default:
