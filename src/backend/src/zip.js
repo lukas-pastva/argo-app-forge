@@ -1,11 +1,7 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
-    • listApps()  → returns rich meta (icon, desc, …)
-    • buildZip()  → prunes charts/external to only referenced paths
-                    (except: we no longer delete remote-chart dirs)
-                    + uncomment # oauth2-<app> BEGIN … END blocks
-
-    DEBUG_ZIP=1 will toggle verbose output through dbg()/dbgFile().
+    • buildZip() now preserves YAML indentation when uncommenting
+      oauth2 blocks: only the “# ” marker is removed.
 */
 
 import fs       from "fs/promises";
@@ -25,8 +21,8 @@ async function exists(p){ try{ await fs.access(p); return true; }catch{return fa
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
 
 /* ───────────────────────────────────────────────────────────────
-   Uncomment everything between “# oauth2-<app> BEGIN” … “END”.
-   Marker lines stay commented; only the inner lines lose “# ”.
+   Uncomment everything between “# oauth2-<app> BEGIN” … END,
+   but keep the indentation – remove **only** “# ” or “#”.
 ──────────────────────────────────────────────────────────────── */
 function uncommentOauth2Blocks(text, activeApps=new Set()){
   const out   = [];
@@ -36,16 +32,16 @@ function uncommentOauth2Blocks(text, activeApps=new Set()){
     const beg = line.match(/^\s*#\s*(oauth2-[\w-]+)\s+BEGIN/i);
     if (beg){
       inBlock = activeApps.has(beg[1]);
-      out.push(line);            // keep BEGIN marker
+      out.push(line);                  // keep BEGIN marker
       continue;
     }
     if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)){
       inBlock = false;
-      out.push(line);            // keep END marker
+      out.push(line);                  // keep END marker
       continue;
     }
     if (inBlock){
-      out.push(line.replace(/^\s*#\s?/, ""));   // strip one leading “# ”
+      out.push(line.replace(/^(\s*)#\s?/, "$1"));
     }else{
       out.push(line);
     }
