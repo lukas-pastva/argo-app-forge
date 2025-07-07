@@ -21,29 +21,33 @@ const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo
 
 /* ───────────────────────────────────────────────────────────────
    NEW ➊ – Uncomment everything between
-           “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
-   Marker lines stay commented; only the lines *inside* lose their “# ”
+            “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
+   - BEGIN / END marker-lines stay commented
+   - Lines **inside** lose only the “# ”, original indent is kept
 ──────────────────────────────────────────────────────────────── */
-function uncommentOauth2Blocks(text, activeApps = new Set()){
+function uncommentOauth2Blocks(text, activeApps = new Set()) {
   const out   = [];
   let inBlock = false;
 
-  for (const line of text.split(/\r?\n/)){
-    const beg = line.match(/^\s*#\s*(oauth2-[\w-]+)\s+BEGIN/i);
-    if (beg){
-      inBlock = activeApps.has(beg[1]);
-      out.push(line);                 // keep BEGIN marker
+  for (const line of text.split(/\r?\n/)) {
+    const beg = line.match(/^(\s*)#\s*(oauth2-[\w-]+)\s+BEGIN/i);
+    if (beg) {
+      inBlock = activeApps.has(beg[2]);          // active-only
+      out.push(line);                            // keep BEGIN
       continue;
     }
-    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)){
+    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)) {
       inBlock = false;
-      out.push(line);                 // keep END marker
+      out.push(line);                            // keep END
       continue;
     }
-    if (inBlock){
-      // Strip exactly one leading “# ” or “#”.
-      out.push(line.replace(/^\s*#\s?/, ""));
-    }else{
+
+    /* Inside an active block → drop the single leading “# ” but
+       preserve the original indentation that precedes it        */
+    if (inBlock) {
+      const m = line.match(/^(\s*)#\s?(.*)$/);
+      out.push(m ? m[1] + m[2] : line);
+    } else {
       out.push(line);
     }
   }
