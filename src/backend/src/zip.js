@@ -1,10 +1,10 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
-    • listApps() → returns rich meta (icon, desc, …)
-    • buildZip() → prunes charts/external to only referenced paths
+    • listApps()  → returns rich meta (icon, desc, …)
+    • buildZip()  → prunes charts/external to only referenced paths
                     (except: we no longer delete remote-chart dirs)
                     + NEW 2025-07-07
-                      ▶ uncomment # oauth2-<app> BEGIN … END blocks
+                      ▶ correctly uncomment  # oauth2-<app> BEGIN … END  blocks
 */
 
 import fs       from "fs/promises";
@@ -20,31 +20,36 @@ async function exists(p){ try{ await fs.access(p); return true; }catch{return fa
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
 
 /* ───────────────────────────────────────────────────────────────
-   NEW ➊ – Uncomment everything between
-            “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
-   - BEGIN / END marker-lines stay commented
-   - Lines **inside** lose only the “# ”, original indent is kept
+   Uncomment everything between
+   “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
+
+   • The BEGIN / END marker lines themselves stay commented.
+   • If activeApps is an **empty set** we treat that as “uncomment all
+     OAuth2 blocks”.
 ──────────────────────────────────────────────────────────────── */
 function uncommentOauth2Blocks(text, activeApps = new Set()) {
   const out   = [];
-  let inBlock = false;
+  let inBlock       = false;   // between any BEGIN … END
+  let processBlock  = false;   // true for a block we want to modify
 
   for (const line of text.split(/\r?\n/)) {
-    const beg = line.match(/^(\s*)#\s*(oauth2-[\w-]+)\s+BEGIN/i);
+    const beg = line.match(/^(\s*)#\s*(oauth2-[A-Za-z0-9_-]+)\s+BEGIN/i);
     if (beg) {
-      inBlock = activeApps.has(beg[2]);          // active-only
-      out.push(line);                            // keep BEGIN
-      continue;
-    }
-    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)) {
-      inBlock = false;
-      out.push(line);                            // keep END
+      const allActive   = activeApps.size === 0;        // ← key addition
+      processBlock      = allActive || activeApps.has(beg[2]);
+      inBlock           = true;
+      out.push(line);                                   // keep BEGIN marker
       continue;
     }
 
-    /* Inside an active block → drop the single leading “# ” but
-       preserve the original indentation that precedes it        */
-    if (inBlock) {
+    if (/^\s*#\s*oauth2-[A-Za-z0-9_-]+\s+END/i.test(line)) {
+      inBlock = processBlock = false;
+      out.push(line);                                   // keep END marker
+      continue;
+    }
+
+    if (inBlock && processBlock) {
+      // strip exactly one leading “# ” (or “#”) while preserving indent
       const m = line.match(/^(\s*)#\s?(.*)$/);
       out.push(m ? m[1] + m[2] : line);
     } else {
@@ -119,8 +124,8 @@ export async function listApps(){
 
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects||[])
-      for (const app of proj.applications||[]){
+    for (const proj of doc.appProjects || [])
+      for (const app of proj.applications || []){
         if (map.has(app.name)) continue;                    // de-dupe by name
         if (app.path) map.set(app.name, await chartMeta(root, app.path));
         else          map.set(app.name, {});                // remote chart
@@ -138,8 +143,8 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const needed = new Set();
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects||[])
-      for (const app of proj.applications||[])
+    for (const proj of doc.appProjects || [])
+      for (const app of proj.applications || [])
         if (keepNames.includes(app.name) && app.path){
           const p = app.path.replace(/^\.?\/*/,"");   // canonical
           needed.add(p);                              // e.g.  external/foo/bar
@@ -203,16 +208,16 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   }
 
   /* ─────────────────────────────────────────────────────────────
-     NEW ➋ – OAuth2: uncomment blocks for the selected oauth2-apps
+     OAuth2: uncomment blocks for the selected oauth2-apps
   ───────────────────────────────────────────────────────────── */
   const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
-  if (oauth2Set.size){
+  if (oauth2Set.size || true) {               // true → run even when empty
     const yamls = await fg(['values/**/*.ya?ml'], { cwd: tmp });
     await Promise.all(
       yamls.map(async rel => {
         const p   = path.join(tmp, rel);
         const txt = await fs.readFile(p, "utf8");
-        const mod = uncommentOauth2Blocks(txt, oauth2Set);
+        const mod = uncommentOauth2Blocks(txt, oauth2Set); // empty set = all
         if (mod !== txt) await fs.writeFile(p, mod);
       })
     );
