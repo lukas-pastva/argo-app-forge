@@ -1,17 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ###############################################################################
 # 1-install-control-plane.sh
-# ( … commentary unchanged … )
+# ────────────────────────────────────────────────────────────────────────────
+# Installs an RKE2 control-plane node, Argo CD, bootstraps your Git repo,
+# and (optionally) seeds Rancher on the same cluster.
+#
+# New in this version
+# ───────────────────
+# • For every application listed in $OAUTH2_APPS it
+#     – creates a namespace with the same name
+#     – creates / updates a secret <app> holding:
+#         client-id, client-secret, cookie-secret, redis-password
+#
+# Environment variables you can pre-seed (same as before + OAuth2):
+#   RANCHER_TOKEN       – RKE2 cluster-join token
+#   GIT_REPO_URL        – SSH URL of your Git repo (e.g. git@host:org/repo.git)
+#   SSH_PRIVATE_KEY     – private key that grants read-write access to repo
+#   ARGOCD_PASS         – desired Argo CD *admin* password (plain text)
+#   RANCHER_PASS        – desired Rancher admin password
+#   INSTALL_RANCHER     – "true" → also install Rancher & bootstrap password
+#
+# OAuth2 secrets
+# ──────────────
+#   OAUTH2_APPS                   – space / comma separated list of app names
+#   For every <APP> in that list (upper-cased, dashes→underscores) set:
+#     OAUTH2_<APP>_CLIENT_ID
+#     OAUTH2_<APP>_CLIENT_SECRET
+#     OAUTH2_<APP>_COOKIE_SECRET
+#     OAUTH2_<APP>_REDIS_PASSWORD
 ###############################################################################
 
-# ── auto-sudo (unchanged) ────────────────────────────────────────────────────
+###############################################################################
+# Auto-escalate – relaunch under sudo if not root
+###############################################################################
 if (( EUID != 0 )); then
   echo "⎈  Not running as root – re-launching with sudo…"
   exec sudo -E bash "$0" "$@"
 fi
 
-# ── variables / prompts (unchanged) ─────────────────────────────────────────
+###############################################################################
+# Variables & interactive fall-backs
+###############################################################################
 KUBE_USER="${SUDO_USER:-root}"
 USER_HOME="$(getent passwd "$KUBE_USER" | cut -d: -f6)"
 KUBE_DIR="$USER_HOME/.kube"
@@ -31,7 +62,9 @@ if [[ -z "$SSH_PRIVATE_KEY" ]]; then
 fi
 [[ -z "$ARGOCD_PASS"  ]] && read -s -p "Enter desired Argo CD admin password : " ARGOCD_PASS && echo
 
-# ── htpasswd availability (unchanged) ───────────────────────────────────────
+###############################################################################
+# Ensure *htpasswd* is available (apache2-utils or httpd-tools)
+###############################################################################
 if ! command -v htpasswd >/dev/null; then
   echo "Installing *htpasswd* utility…"
   if   command -v apt-get >/dev/null; then
@@ -45,13 +78,22 @@ if ! command -v htpasswd >/dev/null; then
   fi
 fi
 
-# ── bcrypt hash for Argo CD admin (unchanged) ───────────────────────────────
-ARGOCD_HASH="$(htpasswd -nbBC 10 "" "$ARGOCD_PASS" | tr -d ':\n' | sed 's/\$2y/\$2a/')"
+###############################################################################
+# Hash the Argo CD password (bcrypt, $2a$…) – required by the Helm chart
+###############################################################################
+ARGOCD_HASH="$(
+  htpasswd -nbBC 10 "" "$ARGOCD_PASS" \
+    | tr -d ':\n' \
+    | sed 's/\$2y/\$2a/'
+)"
 
-# ── RKE2 control-plane install (unchanged) ──────────────────────────────────
+###############################################################################
+# RKE2 control-plane install
+###############################################################################
 mkdir -p /etc/rancher/rke2/
 cat <<EOF >/etc/rancher/rke2/config.yaml
 token: ${TOKEN}
+
 node-taint:
   - "CriticalAddonsOnly=true:NoExecute"
 cni:
@@ -61,19 +103,28 @@ disable:
   - rke2-kube-proxy
   - rke2-ingress-nginx
 EOF
+
 curl -sfL https://get.rke2.io | INSTALL_RKE2_METHOD='tar' sh -
 systemctl enable rke2-server.service
 systemctl start  rke2-server.service
 
-# ── kubectl · k9s · Helm (unchanged) ────────────────────────────────────────
+###############################################################################
+# Tooling – kubectl · k9s · Helm (latest stable versions)
+###############################################################################
 K8S_VERSION="$(curl -sL https://dl.k8s.io/release/stable.txt)"
-curl -sL "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+curl -sL "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl" \
+  -o /usr/local/bin/kubectl
 chmod 0755 /usr/local/bin/kubectl
-curl -sL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz" \
-  | tar zx -C /usr/local/bin k9s && chmod 0755 /usr/local/bin/k9s
+
+curl -sL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz" |
+  tar zx -C /usr/local/bin k9s
+chmod 0755 /usr/local/bin/k9s
+
 curl -fsSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
-# ── kubeconfig for local user (unchanged) ───────────────────────────────────
+###############################################################################
+# kubeconfig for the chosen user
+###############################################################################
 mkdir -p "$KUBE_DIR"
 cp "$ADMIN_KUBECONFIG" "$KUBE_DIR/config"
 chown -R "$KUBE_USER":"$KUBE_USER" "$KUBE_DIR"
@@ -83,17 +134,15 @@ echo "Waiting for Kubernetes API to become available…"
 until kubectl version >/dev/null 2>&1; do sleep 5; done
 
 ###############################################################################
-# ⬇️  MOVED UP — Git repo SSH secret for Argo CD  (created **before** install)
+# Git repo SSH secret for Argo CD        ← moved up (needs argocd ns)
 ###############################################################################
-ARGOCD_PASS="${ARGOCD_PASS:-}"
-if [[ -z "$ARGOCD_PASS" ]]; then
-  read -s -p "Enter desired Argo CD admin password: " ARGOCD_PASS && echo
-fi
-
 echo "Creating Git SSH secret in argocd…"
+
 kubectl get ns argocd >/dev/null 2>&1 || kubectl create ns argocd
 
+# Turn literal '\n' back into real line-breaks
 printf -v KEY_STR '%b\n' "${SSH_PRIVATE_KEY//\\n/$'\n'}"
+
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Secret
@@ -109,26 +158,32 @@ $(echo "$KEY_STR" | sed 's/^/    /')
   type: git
   url: $GIT_REPO_URL
 EOF
-echo "✔ SSH secret applied."
 
 ###############################################################################
-# Argo CD installation  (unchanged otherwise)
+# Argo CD installation (with *hashed* admin password)
 ###############################################################################
+ARGOCD_PASS="${ARGOCD_PASS:-}"
+if [[ -z "$ARGOCD_PASS" ]]; then
+  read -s -p "Enter desired Argo CD admin password: " ARGOCD_PASS && echo
+fi
+
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 helm upgrade --install argocd argo/argo-cd \
-  --namespace argocd --version 8.1.2 \
+  --namespace argocd --create-namespace --version 8.1.2 \
   --set configs.secret.createSecret=true \
   --set-string configs.secret.argocdServerAdminPassword="$ARGOCD_HASH"
+
 echo -e "\n✔ Argo CD installed – user: *admin*, password: '${ARGOCD_PASS}'"
 
 ###############################################################################
-# (the rest of the script — AppProject, Rancher, OAuth2, etc. — is unchanged)
-# … ↓ keep everything that follows exactly as before …
+# Default AppProject + "app-of-apps" Application bootstrap
 ###############################################################################
+echo "Bootstrapping app-of-apps…"
 
-# Default AppProject + app-of-apps bootstrap (unchanged)
 sleep 10
+
+# ⬇ If the “default” AppProject already exists, do NOT recreate it
 if ! kubectl get appproject default -n argocd >/dev/null 2>&1; then
 cat <<EOF | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
@@ -149,7 +204,11 @@ spec:
   sourceRepos:
   - '*'
 EOF
+else
+  echo "✔ AppProject 'default' already present – skipping."
 fi
+
+# The Application can be safely (re-)applied every time
 cat <<EOF | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -174,9 +233,14 @@ spec:
       selfHeal: true
 EOF
 
-# Optional Rancher bootstrap (unchanged)
+###############################################################################
+# Optional – Rancher bootstrap
+###############################################################################
 if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
-  [[ -z "$RANCHER_PASS" ]] && read -s -p "Enter Rancher admin password (bootstrapPassword): " RANCHER_PASS && echo
+  if [[ -z "$RANCHER_PASS" ]]; then
+    read -s -p "Enter Rancher admin password (bootstrapPassword): " RANCHER_PASS && echo
+  fi
+
   kubectl get ns cattle-system >/dev/null 2>&1 || kubectl create ns cattle-system
   kubectl -n cattle-system create secret generic bootstrap-secret \
     --from-literal=bootstrapPassword="$RANCHER_PASS" \
@@ -184,31 +248,48 @@ if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
   echo "✔ Rancher bootstrap-secret created/updated."
 fi
 
-# OAuth2 app secrets (unchanged)
+###############################################################################
+# OAuth2 apps – per-app namespace + secret
+###############################################################################
 if [[ -n "${OAUTH2_APPS:-}" ]]; then
+  # turn commas into spaces, squeeze duplicate spaces
   for APP in $(echo "$OAUTH2_APPS" | tr ',' ' ' | xargs); do
     NS="$APP"
+    # env-var prefix: uppercase, “-” → “_”
     PREF=$(echo "$APP" | tr '[:lower:]-' '[:upper:]_')
+
+    # pull the 4 expected variables, default to empty string
     eval CLIENT_ID="\${${PREF}_CLIENT_ID:-}"
     eval CLIENT_SECRET="\${${PREF}_CLIENT_SECRET:-}"
     eval COOKIE_SECRET="\${${PREF}_COOKIE_SECRET:-}"
     eval REDIS_PASSWORD="\${${PREF}_REDIS_PASSWORD:-}"
+
     if [[ -z "$CLIENT_ID" || -z "$CLIENT_SECRET" ]]; then
       echo "⚠️  Skipping ${APP} – CLIENT_ID / CLIENT_SECRET not set."
       continue
     fi
+
+    # 1) namespace (idempotent)
     kubectl get ns "$NS" >/dev/null 2>&1 || kubectl create ns "$NS"
-    kubectl -n "$NS" create secret generic "$NS" \
+
+    # 2) generic secret (idempotent apply)
+    kubectl -n "$NS" create secret generic "${NS}" \
       --from-literal=client-id="$CLIENT_ID" \
       --from-literal=client-secret="$CLIENT_SECRET" \
       --from-literal=cookie-secret="$COOKIE_SECRET" \
       --from-literal=redis-password="$REDIS_PASSWORD" \
       --dry-run=client -o yaml | kubectl apply -f -
+
     echo "✔ OAuth2 secret for ${APP} applied."
   done
 fi
 
+###############################################################################
+# All done!
+###############################################################################
 echo
 echo "🎉  Installation finished."
 echo "    kubeconfig for ${KUBE_USER}: $KUBE_DIR/config"
+
+# ── self-destruct ────────────────────────────────────────────────────────────
 rm -- "$0" 2>/dev/null || true
