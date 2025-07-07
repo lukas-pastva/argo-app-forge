@@ -1,4 +1,4 @@
-/*  src/frontend/src/App.jsx  */
+// src/frontend/src/App.jsx
 import React, { useEffect, useRef, useState } from "react";
 import Spinner     from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
@@ -288,8 +288,7 @@ export default function App() {
   /* renderer ----------------------------------------------- */
   function renderStep() {
     switch (step) {
-      /* 0 ─ Welcome --------------------------------------- */
-      case 0:
+      /* 0 ─ Welcome */ case 0:
         return (
           <>
             <h2>Welcome to AppForge 🚀</h2>
@@ -307,8 +306,7 @@ export default function App() {
           </>
         );
 
-      /* 1 ─ Domain ---------------------------------------- */
-      case 1:
+      /* 1 ─ Domain */ case 1:
         return (
           <>
             <h2>Step 1 – Main domain</h2>
@@ -330,8 +328,7 @@ export default function App() {
           </>
         );
 
-      /* 2 ─ Repo ------------------------------------------ */
-      case 2:
+      /* 2 ─ Repo */ case 2:
         return (
           <>
             <h2>Step 2 – Git repository (SSH)</h2>
@@ -349,8 +346,7 @@ export default function App() {
           </>
         );
 
-      /* 3 ─ Apps ------------------------------------------ */
-      case 3:
+      /* 3 ─ Apps */ case 3:
         return (
           <>
             <h2>Step 3 – Choose applications</h2>
@@ -433,8 +429,7 @@ export default function App() {
           </>
         );
 
-      /* 4 ─ ZIP + Repo ------------------------------------ */
-      case 4:
+      /* 4 ─ ZIP + Repo */ case 4:
         return (
           <>
             <h2>Step 4 – Download ZIP &amp; push</h2>
@@ -456,8 +451,7 @@ export default function App() {
           </>
         );
 
-      /* 5 ─ Secrets --------------------------------------- */
-      case 5:
+      /* 5 ─ Secrets */ case 5:
         return (
           <>
             <h2>Step 5 – Secrets</h2>
@@ -466,7 +460,6 @@ export default function App() {
               <Spinner size={32} />
             ) : (
               <>
-                {/* SSH public */}
                 <label>SSH public key</label>
                 <div className="key-wrap">
                   <pre className="key-block pub">{keys.publicKey}</pre>
@@ -477,7 +470,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* SSH private */}
                 <label style={{ marginTop: "1rem" }}>SSH private key</label>
                 <div className="key-wrap">
                   <pre className="key-block priv">{keys.privateKey}</pre>
@@ -488,7 +480,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* token */}
                 <label style={{ marginTop: "1rem" }}>Rancher join token</label>
                 <div className="key-wrap">
                   <pre className="key-block pub">{token}</pre>
@@ -499,7 +490,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* passwords */}
                 <label style={{ marginTop: "1rem" }}>Admin passwords</label>
                 <ul className="summary-list" style={{ marginTop: ".3rem" }}>
                   <li>
@@ -534,8 +524,7 @@ export default function App() {
           </>
         );
 
-      /* 6 ─ Deploy key ------------------------------------ */
-      case 6:
+      /* 6 ─ Deploy key */ case 6:
         return (
           <>
             <h2>Step 6 – Deploy key</h2>
@@ -556,8 +545,7 @@ export default function App() {
           </>
         );
 
-      /* 7 ─ SSH VMs --------------------------------------- */
-      case 7:
+      /* 7 ─ SSH VMs */ case 7:
         return (
           <>
             <h2>Step 7 – SSH onto the VMs</h2>
@@ -571,77 +559,67 @@ export default function App() {
           </>
         );
 
-    /* 8 ─ Scripts ------------------------------------------ */
-    if (step === 8) {
-      return (
-        <>
-          <h2>Step 8 – Helper scripts</h2>
-          <Intro i={8} />
-          {busyScp ? (
-            <Spinner size={28} />
-          ) : (
-            <table className="scripts-table">
-              <tbody>
-                {scripts.map((s) => (
-                  <tr key={s}>
-                    <td>
-                      <code>{s}</code>
-                    </td>
-                    <td style={{ display: "flex", gap: ".5rem", flexWrap: "wrap" }}>
-                      {/* direct download */}
-                      <a className="tiny-btn" href={`/scripts/${s}`} download>
-                        Download
-                      </a>
+      /* 8 ─ Scripts */ case 8:
+        return (
+          <>
+            <h2>Step 8 – Helper scripts</h2>
+            <Intro i={8} />
+            {busyScp ? (
+              <Spinner size={28} />
+            ) : (
+              <table className="scripts-table">
+                <tbody>
+                  {scripts.map((s) => (
+                    <tr key={s}>
+                      <td>
+                        <code>{s}</code>
+                      </td>
+                      <td style={{ display: "flex", gap: ".5rem", flexWrap: "wrap" }}>
+                        <a className="tiny-btn" href={`/scripts/${s}`} download>
+                          Download
+                        </a>
+                        <AsyncCopyBtn
+                          getText={() => getFile(s)}
+                          onCopied={() => toast("Copied file!")}
+                        >
+                          ⧉ File
+                        </AsyncCopyBtn>
+                        <AsyncCopyBtn
+                          getText={async () => oneLiner(s, await getFile(s))}
+                          onCopied={() => toast("Copied one-liner!")}
+                        >
+                          ⧉ One-liner
+                        </AsyncCopyBtn>
+                        <AsyncCopyBtn
+                          getText={async () => {
+                            const body = await getFile(s);
+                            const installRancher = [...sel].some((a) =>
+                              a.toLowerCase().includes("rancher"),
+                            );
+                            return oneLinerSecrets(
+                              s,
+                              body,
+                              { ...pwds, ssh: keys?.privateKey || "" },
+                              token,
+                              repo.trim(),
+                              installRancher,
+                            );
+                          }}
+                          onCopied={() => toast("Copied one-liner + secrets!")}
+                        >
+                          ⧉ One-liner&nbsp;+&nbsp;secrets
+                        </AsyncCopyBtn>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <Nav />
+          </>
+        );
 
-                      {/* ⧉ File */}
-                      <AsyncCopyBtn
-                        getText={() => getFile(s)}
-                        onCopied={() => toast("Copied file!")}
-                      >
-                        ⧉ File
-                      </AsyncCopyBtn>
-
-                      {/* ⧉ One-liner */}
-                      <AsyncCopyBtn
-                        getText={async () => oneLiner(s, await getFile(s))}
-                        onCopied={() => toast("Copied one-liner!")}
-                      >
-                        ⧉ One-liner
-                      </AsyncCopyBtn>
-
-                      {/* ⧉ One-liner + secrets */}
-                      <AsyncCopyBtn
-                        getText={async () => {
-                          const body = await getFile(s);
-                          const installRancher = [...sel].some((a) =>
-                            a.toLowerCase().includes("rancher"),
-                          );
-                          return oneLinerSecrets(
-                            s,
-                            body,
-                            { ...pwds, ssh: keys?.privateKey || "" },
-                            token,
-                            repo.trim(),
-                            installRancher,
-                          );
-                        }}
-                        onCopied={() => toast("Copied one-liner + secrets!")}
-                      >
-                        ⧉ One-liner&nbsp;+&nbsp;secrets
-                      </AsyncCopyBtn>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <Nav />
-        </>
-      );
-    }
-
-      /* 9 ─ Overview -------------------------------------- */
-      default:
+      /* 9 ─ Overview */ case 9:
         return (
           <>
             <h2>Step 9 – Overview 🎉</h2>
@@ -668,54 +646,78 @@ export default function App() {
                     <CopyBtn text={repo} onCopied={() => toast("Copied!")} />
                   </td>
                 </tr>
+
                 <tr>
-                  <th>Apps</th>
-                  <td colSpan={2}>
-                    {[...sel].join(", ") || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <th>Rancher token</th>
-                  <td>{token}</td>
+                  <th>Argo CD password</th>
+                  <td>{pwds?.argocd || "—"}</td>
                   <td>
-                    <CopyBtn text={token} onCopied={() => toast("Copied!")} />
+                    <CopyBtn
+                      text={pwds?.argocd || ""}
+                      onCopied={() => toast("Copied!")}
+                    />
                   </td>
                 </tr>
+                <tr>
+                  <th>Keycloak password</th>
+                  <td>{pwds?.keycloak || "—"}</td>
+                  <td>
+                    <CopyBtn
+                      text={pwds?.keycloak || ""}
+                      onCopied={() => toast("Copied!")}
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th>Rancher password</th>
+                  <td>{pwds?.rancher || "—"}</td>
+                  <td>
+                    <CopyBtn
+                      text={pwds?.rancher || ""}
+                      onCopied={() => toast("Copied!")}
+                    />
+                  </td>
+                </tr>
+
                 <tr>
                   <th>SSH public key</th>
-                  <td style={{ wordBreak: "break-all" }}>
-                    {keys?.publicKey || "—"}
-                  </td>
                   <td>
-                    {keys && (
-                      <CopyBtn
-                        text={keys.publicKey}
-                        onCopied={() => toast("Copied!")}
-                      />
-                    )}
+                    <div className="key-wrap">
+                      <pre className="key-block pub">
+                        {keys
+                          ? keys.publicKey.split("\n").slice(0, 2).join("\n") + "\n…"
+                          : "—"}
+                      </pre>
+                      {keys && (
+                        <CopyBtn
+                          text={keys.publicKey}
+                          className="action-btn key-copy"
+                          onCopied={() => toast("Copied!")}
+                        />
+                      )}
+                    </div>
                   </td>
+                  <td></td>
                 </tr>
+
                 <tr>
                   <th>SSH private key</th>
-                  <td style={{ wordBreak: "break-all" }}>
-                    {keys?.privateKey || "—"}
-                  </td>
                   <td>
-                    {keys && (
-                      <CopyBtn
-                        text={keys.privateKey}
-                        onCopied={() => toast("Copied!")}
-                      />
-                    )}
+                    <div className="key-wrap">
+                      <pre className="key-block priv">
+                        {keys
+                          ? keys.privateKey.split("\n").slice(0, 2).join("\n") + "\n…"
+                          : "—"}
+                      </pre>
+                      {keys && (
+                        <CopyBtn
+                          text={keys.privateKey}
+                          className="action-btn key-copy"
+                          onCopied={() => toast("Copied!")}
+                        />
+                      )}
+                    </div>
                   </td>
-                </tr>
-                <tr>
-                  <th>Passwords</th>
-                  <td colSpan={2}>
-                    Argo&nbsp;CD: {pwds?.argocd || "—"} · Keycloak:{" "}
-                    {pwds?.keycloak || "—"} · Rancher:{" "}
-                    {pwds?.rancher || "—"}
-                  </td>
+                  <td></td>
                 </tr>
               </tbody>
             </table>
@@ -728,6 +730,9 @@ export default function App() {
             </button>
           </>
         );
+
+      default:
+        return null;
     }
   }
 
