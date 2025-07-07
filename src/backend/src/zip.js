@@ -28,28 +28,24 @@ const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo
      OAuth2 blocks”.
 ──────────────────────────────────────────────────────────────── */
 function uncommentOauth2Blocks(text, activeApps = new Set()) {
-  const out   = [];
-  let inBlock       = false;   // between any BEGIN … END
-  let processBlock  = false;   // true for a block we want to modify
+  const out = [];
+  let inBlock = false, processBlock = false;
 
   for (const line of text.split(/\r?\n/)) {
-    const beg = line.match(/^(\s*)#\s*(oauth2-[A-Za-z0-9_-]+)\s+BEGIN/i);
+    const beg = line.match(/^(\s*)#\s*(oauth2-[\w-]+)\s+BEGIN/i);
     if (beg) {
-      const allActive   = activeApps.size === 0;        // ← key addition
-      processBlock      = allActive || activeApps.has(beg[2]);
-      inBlock           = true;
-      out.push(line);                                   // keep BEGIN marker
+      const allActive = activeApps.size === 0;          // empty set → enable all
+      processBlock    = allActive || activeApps.has(beg[2]);
+      inBlock         = true;
+      out.push(line);
       continue;
     }
-
-    if (/^\s*#\s*oauth2-[A-Za-z0-9_-]+\s+END/i.test(line)) {
+    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)) {
       inBlock = processBlock = false;
-      out.push(line);                                   // keep END marker
+      out.push(line);
       continue;
     }
-
     if (inBlock && processBlock) {
-      // strip exactly one leading “# ” (or “#”) while preserving indent
       const m = line.match(/^(\s*)#\s?(.*)$/);
       out.push(m ? m[1] + m[2] : line);
     } else {
@@ -135,7 +131,7 @@ export async function listApps(){
 }
 
 /* ── 2)  Build ZIP ──────────────────────────────────────────── */
-export async function buildZip(keepNames, repoReplace="", domainReplace=""){
+export async function buildZip(keepNames, repoReplace = "", domainReplace = "") {
   const root  = await ensureRepo();
   const files = await appFiles(root);
 
@@ -211,20 +207,24 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
      OAuth2: uncomment blocks for the selected oauth2-apps
   ───────────────────────────────────────────────────────────── */
   const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
-  if (oauth2Set.size || true) {               // true → run even when empty
-    const yamls = await fg(['values/**/*.ya?ml'], { cwd: tmp });
-    await Promise.all(
-      yamls.map(async rel => {
-        const p   = path.join(tmp, rel);
-        const txt = await fs.readFile(p, "utf8");
-        const mod = uncommentOauth2Blocks(txt, oauth2Set); // empty set = all
-        if (mod !== txt) await fs.writeFile(p, mod);
-      })
-    );
-  }
+
+  /* 🎯 FIX #71 – glob includes root values as well */
+  const yamls = await fg(
+    ['values/*.ya?ml', 'values/**/*.ya?ml'],   // ← added first pattern
+    { cwd: tmp }
+  );
+
+  await Promise.all(
+    yamls.map(async rel => {
+      const p   = path.join(tmp, rel);
+      const txt = await fs.readFile(p, "utf8");
+      const mod = uncommentOauth2Blocks(txt, oauth2Set);   // empty set = “all”
+      if (mod !== txt) await fs.writeFile(p, mod);
+    })
+  );
 
   /* stream ZIP – root folder = main domain (if provided) */
-  const arch = Archiver("zip",{zlib:{level:9}});
+  const arch = Archiver("zip", { zlib: { level: 9 } });
   arch.directory(tmp, domainReplace || false);
   arch.finalize();
   return arch;
