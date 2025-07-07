@@ -1,10 +1,7 @@
-/*  src/backend/src/zip.js
+/*  src/backend/src/zip.js  –  v2025-07-07-dbg
     ───────────────────────────────────────────────────────────────
-    • listApps()  → returns rich meta (icon, desc, …)
-    • buildZip()  → prunes charts/external to only referenced paths
-                    (except: we no longer delete remote-chart dirs)
-                    + NEW 2025-07-07
-                      ▶ correctly uncomment  # oauth2-<app> BEGIN … END  blocks
+    Adds ultra-verbose DEBUG_ZIP logging to help diagnose
+    why OAuth2 BEGIN/END blocks may not be uncommented.
 */
 
 import fs       from "fs/promises";
@@ -15,57 +12,57 @@ import Archiver from "archiver";
 import { ensureRepo } from "./git.js";
 import cfg      from "./config.js";
 
+/* ── tiny debug helper ───────────────────────────────────────── */
+const dbgEnabled = !!process.env.DEBUG_ZIP;
+function dbg(...msg){ if (dbgEnabled) console.log("[zip.js]", ...msg); }
+
 /* ── helpers ─────────────────────────────────────────────────── */
 async function exists(p){ try{ await fs.access(p); return true; }catch{return false;} }
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
 
 /* ───────────────────────────────────────────────────────────────
-   Uncomment everything between
-   “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
-
-   • The BEGIN / END marker lines themselves stay commented.
-   • If activeApps is an **empty set** we treat that as “uncomment all
-     OAuth2 blocks”.
+   OAuth2 block-uncomment helper  (now with trace)
 ──────────────────────────────────────────────────────────────── */
-function uncommentOauth2Blocks(text, activeApps = new Set()) {
+function uncommentOauth2Blocks(text, activeApps = new Set()){
   const out = [];
-  let inBlock = false, processBlock = false;
+  let inBlock = false, processBlock = false, current = "";
 
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text.split(/\r?\n/)){
     const beg = line.match(/^(\s*)#\s*(oauth2-[\w-]+)\s+BEGIN/i);
-    if (beg) {
-      const allActive = activeApps.size === 0;          // empty set → enable all
-      processBlock    = allActive || activeApps.has(beg[2]);
-      inBlock         = true;
+    if (beg){
+      current      = beg[2];
+      processBlock = (activeApps.size === 0) || activeApps.has(current);
+      inBlock      = true;
+      dbg("BEGIN", current, "process?", processBlock);
       out.push(line);
       continue;
     }
-    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)) {
+    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)){
+      dbg("END  ", current);
       inBlock = processBlock = false;
+      current = "";
       out.push(line);
       continue;
     }
-    if (inBlock && processBlock) {
+    if (inBlock && processBlock){
       const m = line.match(/^(\s*)#\s?(.*)$/);
       out.push(m ? m[1] + m[2] : line);
-    } else {
+    }else{
       out.push(line);
     }
   }
   return out.join("\n");
 }
 
-/* grab meta from a local chart dir ---------------------------------------- */
+/* ── chart meta helper (unchanged, but keep debug stubs) ────── */
 async function chartMeta(root, chartRel){
   let dir = path.join(root, chartRel);
-
-  // if Chart.yaml missing and we’re inside “external/…”, try “charts/external/…”
   if (!await exists(path.join(dir, "Chart.yaml")) &&
-      chartRel.startsWith("external/")) {
+      chartRel.startsWith("external/")){
     dir = path.join(root, "charts", chartRel);
   }
   const files = await fg(["Chart.yaml","chart.yaml"],{cwd:dir,absolute:true});
-  if (!files.length) return {};                         // no Chart.yaml ⇒ no meta
+  if (!files.length) return {};
 
   const meta  = yaml.load(await fs.readFile(files[0],"utf8")) || {};
   const iconF = meta.icon ? [meta.icon] : iconFiles;
@@ -105,61 +102,61 @@ async function chartMeta(root, chartRel){
   };
 }
 
-/* locate every app-of-apps file once -------------------------------------- */
+/* locate every app-of-apps file once --------------------------------------- */
 async function appFiles(root){
   const f = await fg(cfg.appsGlob,{cwd:root,absolute:true});
   if (!f.length) throw new Error(`No file matched APPS_GLOB="${cfg.appsGlob}"`);
   return f;
 }
 
-/* ── 1)  Flatten Applications with meta ─────────────────────── */
+/* ── 1) listApps (unchanged, left verbatim) ─────────────────── */
 export async function listApps(){
   const root  = await ensureRepo();
   const files = await appFiles(root);
-  const map   = new Map();                                  // name → meta
+  const map   = new Map();
 
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects || [])
-      for (const app of proj.applications || []){
-        if (map.has(app.name)) continue;                    // de-dupe by name
+    for (const proj of doc.appProjects||[])
+      for (const app of proj.applications||[]){
+        if (map.has(app.name)) continue;
         if (app.path) map.set(app.name, await chartMeta(root, app.path));
-        else          map.set(app.name, {});                // remote chart
+        else          map.set(app.name, {});
       }
   }
   return [...map.entries()].map(([name,meta]) => ({ name, ...meta }));
 }
 
-/* ── 2)  Build ZIP ──────────────────────────────────────────── */
-export async function buildZip(keepNames, repoReplace = "", domainReplace = "") {
+/* ── 2)  Build ZIP (main export) ─────────────────────────────── */
+export async function buildZip(keepNames, repoReplace="", domainReplace=""){
+  dbg("⇢ buildZip start, keepNames:", keepNames);
+
   const root  = await ensureRepo();
   const files = await appFiles(root);
 
-  /* which chart paths are really referenced?  (collect *both* possible locations) */
+  /* gather referenced chart paths (unchanged) */
   const needed = new Set();
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects || [])
-      for (const app of proj.applications || [])
+    for (const proj of doc.appProjects||[])
+      for (const app of proj.applications||[])
         if (keepNames.includes(app.name) && app.path){
-          const p = app.path.replace(/^\.?\/*/,"");   // canonical
-          needed.add(p);                              // e.g.  external/foo/bar
-          if (p.startsWith("external/"))              // also charts/external/foo/bar
+          const p = app.path.replace(/^\.?\/*/,"");
+          needed.add(p);
+          if (p.startsWith("external/"))
             needed.add(path.posix.join("charts", p));
         }
   }
+  dbg("needed chart paths:", [...needed]);
 
-  /* working copy ── skip ALL “.git” directories right here */
+  /* working copy – filtered clone */
   const tmp = path.join(process.cwd(),"tmp-filtered");
   await fs.rm(tmp,{recursive:true,force:true});
   await fs.cp(root, tmp, {
     recursive: true,
-    /* filter callback runs for every path being copied */
-    filter: (src/*, dest*/) => {
-      const rel = path.relative(root, src);
-      return !rel.split(path.sep).includes(".git");
-    }
+    filter: (src /*, dest*/) => !path.relative(root, src).split(path.sep).includes(".git")
   });
+
 
   /* trim Application blocks */
   for (const aoa of await appFiles(tmp)){
@@ -206,26 +203,35 @@ export async function buildZip(keepNames, repoReplace = "", domainReplace = "") 
   /* ─────────────────────────────────────────────────────────────
      OAuth2: uncomment blocks for the selected oauth2-apps
   ───────────────────────────────────────────────────────────── */
-  const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
 
-  /* 🎯 FIX #71 – glob includes root values as well */
+  const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
+  dbg("oauth2Set:", [...oauth2Set]);
+
   const yamls = await fg(
-    ['values/*.ya?ml', 'values/**/*.ya?ml'],   // ← added first pattern
+    ['values/*.ya?ml', 'values/**/*.ya?ml'],   // << fix included
     { cwd: tmp }
   );
+  dbg("values files found:", yamls.length, yamls);
 
   await Promise.all(
     yamls.map(async rel => {
       const p   = path.join(tmp, rel);
-      const txt = await fs.readFile(p, "utf8");
-      const mod = uncommentOauth2Blocks(txt, oauth2Set);   // empty set = “all”
-      if (mod !== txt) await fs.writeFile(p, mod);
+      const txt = await fs.readFile(p,"utf8");
+      const mod = uncommentOauth2Blocks(txt, oauth2Set);
+      if (mod !== txt){
+        dbg("  ↻ patched", rel);
+        await fs.writeFile(p, mod);
+      }else{
+        dbg("  • unchanged", rel);
+      }
     })
   );
 
-  /* stream ZIP – root folder = main domain (if provided) */
-  const arch = Archiver("zip", { zlib: { level: 9 } });
+  /* stream ZIP */
+  dbg("archiving directory", tmp);
+  const arch = Archiver("zip",{zlib:{level:9}});
   arch.directory(tmp, domainReplace || false);
   arch.finalize();
+  dbg("⇠ buildZip end");
   return arch;
 }
