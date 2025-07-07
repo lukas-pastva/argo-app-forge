@@ -50,7 +50,12 @@ const oneLiner = (n, body) => {
   ].join("\n");
 };
 
-/*  ⬇️  UPDATED: now adds INSTALL_RANCHER flag *and* wipes history  */
+/**
+ *  NEW: now exports all OAuth2 secrets in ENV vars.
+ *
+ *  - apps list →  OAUTH2_APPS="oauth2-google oauth2-github"
+ *  - each app   →  OAUTH2_GOOGLE_CLIENT_ID=…  (and the other 3 keys)
+ */
 const oneLinerSecrets = (
   n,
   body,
@@ -58,6 +63,7 @@ const oneLinerSecrets = (
   rancherToken,
   gitRepoUrl,
   installRancher = false,
+  oauth2Secrets = {},            // ← NEW
 ) => {
   const lines = [
     `export GIT_REPO_URL="${gitRepoUrl}"`,
@@ -68,8 +74,24 @@ const oneLinerSecrets = (
     `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
   ];
 
-  if (installRancher) {
-    lines.push(`export INSTALL_RANCHER="true"`);
+  if (installRancher) lines.push(`export INSTALL_RANCHER="true"`);
+
+  /* ── OAuth2 bundle ─────────────────────────────────────────── */
+  const apps = Object.keys(oauth2Secrets);
+  if (apps.length) {
+    lines.push(`export OAUTH2_APPS="${apps.join(" ")}"`);
+
+    for (const name of apps) {
+      const env = name.toUpperCase().replace(/-/g, "_");  // oauth2-google → OAUTH2_GOOGLE
+      const sec = oauth2Secrets[name] || {};
+
+      lines.push(
+        `export OAUTH2_${env}_CLIENT_ID="${sec.clientId}"`,
+        `export OAUTH2_${env}_CLIENT_SECRET="${sec.clientSecret}"`,
+        `export OAUTH2_${env}_COOKIE_SECRET="${sec.cookieSecret}"`,
+        `export OAUTH2_${env}_REDIS_PASSWORD="${sec.redisPassword}"`,
+      );
+    }
   }
 
   /* write script → sudo-run */
@@ -743,6 +765,7 @@ export default function App() {
                               token,
                               repo.trim(),
                               installRancher,
+                              oauth2Secrets,             // ← NEW ARG
                             );
                           }}
                           onCopied={() => toast("Copied one-liner + secrets!") }
