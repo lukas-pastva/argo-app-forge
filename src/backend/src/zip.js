@@ -1,12 +1,11 @@
 /*  src/backend/src/zip.js
     ───────────────────────────────────────────────────────────────
-    • listApps() → returns rich meta (icon, desc, …)
-    • buildZip() → prunes charts/external to only referenced paths
+    • listApps()  → returns rich meta (icon, desc, …)
+    • buildZip()  → prunes charts/external to only referenced paths
                     (except: we no longer delete remote-chart dirs)
+                    + uncomment # oauth2-<app> BEGIN … END blocks
 
-      NEW 2025-07-07
-      ▶ uncomment # oauth2-<app> BEGIN … END blocks
-      ▶ **extra DEBUG** output everywhere – enable with DEBUG_ZIP=1
+    DEBUG_ZIP=1 will toggle verbose output through dbg()/dbgFile().
 */
 
 import fs       from "fs/promises";
@@ -17,21 +16,19 @@ import Archiver from "archiver";
 import { ensureRepo } from "./git.js";
 import cfg      from "./config.js";
 
-/* ── simple debug helper ───────────────────────────────────────── */
-const DEBUG   = String(process.env.DEBUG_ZIP || "0") !== "0";
-const dbg     = (...m) => { if (DEBUG) console.log("[zip.js]", ...m); };
-const dbgFile = (tag, rel) => DEBUG && console.log(`[zip.js]   ↻ ${tag} ${rel}`);
-
 /* ── helpers ─────────────────────────────────────────────────── */
+const DEBUG   = process.env.DEBUG_ZIP === "1";
+const dbg     = (...a) => DEBUG && console.debug("[zip.js]", ...a);
+const dbgFile = (what, file) => DEBUG && console.debug(`[zip.js]   ↻ ${what} ${file}`);
+
 async function exists(p){ try{ await fs.access(p); return true; }catch{return false;} }
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
 
 /* ───────────────────────────────────────────────────────────────
-   NEW ➊ – Uncomment everything between
-           “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
-   Marker lines stay commented; only the lines *inside* lose their “# ”
+   Uncomment everything between “# oauth2-<app> BEGIN” … “END”.
+   Marker lines stay commented; only the inner lines lose “# ”.
 ──────────────────────────────────────────────────────────────── */
-function uncommentOauth2Blocks(text, activeApps = new Set()){
+function uncommentOauth2Blocks(text, activeApps=new Set()){
   const out   = [];
   let inBlock = false;
 
@@ -39,17 +36,16 @@ function uncommentOauth2Blocks(text, activeApps = new Set()){
     const beg = line.match(/^\s*#\s*(oauth2-[\w-]+)\s+BEGIN/i);
     if (beg){
       inBlock = activeApps.has(beg[1]);
-      out.push(line);                 // keep BEGIN marker
+      out.push(line);            // keep BEGIN marker
       continue;
     }
     if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)){
       inBlock = false;
-      out.push(line);                 // keep END marker
+      out.push(line);            // keep END marker
       continue;
     }
     if (inBlock){
-      // Strip exactly one leading “# ” or “#”.
-      out.push(line.replace(/^\s*#\s?/, ""));
+      out.push(line.replace(/^\s*#\s?/, ""));   // strip one leading “# ”
     }else{
       out.push(line);
     }
@@ -139,40 +135,35 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const root  = await ensureRepo();
   const files = await appFiles(root);
 
-  /* which chart paths are really referenced?  (collect *both* possible locations) */
+  /* which chart paths are really referenced? */
   const needed = new Set();
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
     for (const proj of doc.appProjects||[])
       for (const app of proj.applications||[])
         if (keepNames.includes(app.name) && app.path){
-          const p = app.path.replace(/^\.?\/*/,"");   // canonical
-          needed.add(p);                              // e.g.  external/foo/bar
-          if (p.startsWith("external/"))              // also charts/external/foo/bar
+          const p = app.path.replace(/^\.?\/*/,"");
+          needed.add(p);                                       // external/foo/bar
+          if (p.startsWith("external/"))                       // charts/external/…
             needed.add(path.posix.join("charts", p));
         }
   }
   dbg("needed chart paths:", [...needed]);
 
-  /* working copy ── skip ALL “.git” directories right here */
+  /* working copy ── skip ALL “.git” directories */
   const tmp = path.join(process.cwd(),"tmp-filtered");
   await fs.rm(tmp,{recursive:true,force:true});
   await fs.cp(root, tmp, {
     recursive: true,
-    /* filter callback runs for every path being copied */
-    filter: (src/*, dest*/) => {
-      const rel = path.relative(root, src);
-      return !rel.split(path.sep).includes(".git");
-    }
+    filter: (src/*, dest*/) => !path.relative(root, src).split(path.sep).includes(".git")
   });
 
-  /* trim Application blocks */
+  /* trim App-of-Apps files */
   for (const aoa of await appFiles(tmp)){
     const doc = yaml.load(await fs.readFile(aoa,"utf8")) || {};
     doc.appProjects = (doc.appProjects||[])
       .map(p => {
-        p.applications = (p.applications||[])
-          .filter(a => keepNames.includes(a.name));
+        p.applications = (p.applications||[]).filter(a => keepNames.includes(a.name));
         return p;
       })
       .filter(p => p.applications.length);
@@ -183,11 +174,6 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   for (const rel of await fg("values/*.yaml",{cwd:tmp}))
     if (!keepNames.includes(path.basename(rel,".yaml")))
       await fs.rm(path.join(tmp,rel));
-
-  /* -----------------------------------------------------------------------
-     We *keep* every directory under external/** and charts/external/**.
-     The earlier logic that deleted unreferenced dirs is gone.
-     --------------------------------------------------------------------- */
 
   /* multi-token replacement ----------------------------------- */
   const replacements = [];
@@ -204,25 +190,28 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
       for (const [from,to] of replacements){
         if (txt.includes(from)){ txt = txt.split(from).join(to); changed = true; }
       }
-      if (changed){ await fs.writeFile(p,txt); dbgFile("replaced tokens in", rel); }
+      if (changed){
+        await fs.writeFile(p,txt);
+        dbgFile("replaced tokens in", rel);
+      }
     }));
   }
 
-  /* ─────────────────────────────────────────────────────────────
-     NEW ➋ – OAuth2: uncomment blocks for the selected oauth2-apps
-  ───────────────────────────────────────────────────────────── */
+  /* ──  OAuth2 blocks ───────────────────────────────────────── */
   const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
   dbg("oauth2Set:", [...oauth2Set]);
 
   if (oauth2Set.size){
-    // ⬇ catch files in *root* values/  **and** any nested …/values/
-    const yamls = await fg(['values/*.ya?ml', '**/values/*.ya?ml'], { cwd: tmp });
+    // NEW glob — catches both .yaml and .yml, root & nested /values/
+    const yamls = await fg(
+      ['values/*.yaml', 'values/*.yml', '**/values/*.yaml', '**/values/*.yml'],
+      { cwd: tmp }
+    );
     dbg("values files found:", yamls.length, yamls);
 
-    if (yamls.length === 0 && DEBUG){
-      // print first 50 entries of tmp tree for diagnostics
-      const all = await fg(['**/*'], { cwd: tmp, onlyFiles:false });
-      dbg("‼ nothing matched; tmp contains (first 50):", all.slice(0,50));
+    if (yamls.length === 0 && DEBUG) {
+      const all = await fg(['**/*'], { cwd: tmp, onlyFiles: false });
+      dbg('‼ nothing matched; tmp contains (first 50):', all.slice(0, 50));
     }
 
     await Promise.all(
@@ -243,7 +232,6 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const arch = Archiver("zip",{zlib:{level:9}});
   arch.directory(tmp, domainReplace || false);
   arch.finalize();
-
   dbg("⇠ buildZip end");
   return arch;
 }
