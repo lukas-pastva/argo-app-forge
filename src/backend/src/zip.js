@@ -215,8 +215,8 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   dbg("oauth2Set:", [...oauth2Set]);
 
   if (oauth2Set.size){
-    // NOTE:  the old two-pattern glob failed in your repo – this one works.
-    const yamls = await fg('**/values/*.ya?ml', { cwd: tmp });
+    // ⬇ catch files in *root* values/  **and** any nested …/values/
+    const yamls = await fg(['values/*.ya?ml', '**/values/*.ya?ml'], { cwd: tmp });
     dbg("values files found:", yamls.length, yamls);
 
     if (yamls.length === 0 && DEBUG){
