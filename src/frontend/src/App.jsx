@@ -13,6 +13,23 @@ const rand      = () =>
 const genToken  = () => rand() + rand();
 const genPass   = () => rand();
 
+/* NEW – identify oauth2-apps */
+const isOauth2 = (name = "") => name.toLowerCase().startsWith("oauth2-");
+
+/* NEW – build secret bundle for every oauth2-app ---------------- */
+function makeOauth2Secrets(appNames = []) {
+  const out = {};
+  for (const n of appNames) {
+    out[n] = {
+      clientId      : "",
+      clientSecret  : "",
+      cookieSecret  : genToken(),
+      redisPassword : genPass(),
+    };
+  }
+  return out;
+}
+
 /* ── NEW: pick a unique heredoc delimiter ─────────────────── */
 function pickDelimiter(body, base = "EOF") {
   if (!body.includes(`\n${base}\n`)) return base;
@@ -164,6 +181,10 @@ export default function App() {
   const [keys, setKeys]       = useState(null);
   const [token, setToken]     = useState("");
   const [pwds, setPwds]       = useState(null);
+
+  /* NEW – oauth2 secret bundle */
+  const [oauth2Secrets, setOauth2Secrets] = useState({});
+
   const [scripts, setScripts] = useState([]);
 
   const [step, setStep]       = useState(0);
@@ -195,7 +216,7 @@ export default function App() {
       .finally(() => setBusyScp(false));
   }, [step, scripts.length, busyScp]);
 
-  /* 🔄 generate secrets only once when first landing on Step 5 */
+  /* 🔄 generate secrets when first landing on Step 5 --------- */
   useEffect(() => {
     if (step === 5 && !keys) regenAll();
   }, [step, keys]);
@@ -206,10 +227,16 @@ export default function App() {
   const appsChosen = sel.size > 0;
   const canZip     = domainOK && repoOK && appsChosen;
 
+  /* NEW – oauth2 validation */
+  const oauth2Apps         = [...sel].filter(isOauth2);
+  const oauth2ClientMiss   = oauth2Apps.some(
+    (n) => !oauth2Secrets[n] ||
+           !oauth2Secrets[n].clientId.trim() ||
+           !oauth2Secrets[n].clientSecret.trim()
+  );
+
   /* ──────────────────────────────────────────────────────────
-     NEW ➊ – advance-on-Enter key handler
-     • reacts only inside the wizard (ignores modals)
-     • moves forward when the current step is allowed to proceed
+     NEW ➊ – advance-on-Enter key handler with extra validation
   ────────────────────────────────────────────────────────── */
   const advanceIfAllowed = useCallback(() => {
     const allowed =
@@ -218,11 +245,12 @@ export default function App() {
       (step === 2) ? repoOK   :
       (step === 3) ? appsChosen :
       (step === 4) ? true :
-      /* steps 5-8 have no extra validation */ true;
+      (step === 5) ? !oauth2ClientMiss :
+      /* steps 6-8 have no extra validation */ true;
 
     if (!allowed) return;
     if (step < steps.length - 1) setStep(step + 1);
-  }, [step, domainOK, repoOK, appsChosen]);
+  }, [step, domainOK, repoOK, appsChosen, oauth2ClientMiss]);
 
   useEffect(() => {
     function onKey(e) {
@@ -266,6 +294,10 @@ export default function App() {
       rancher: genPass(),
       ssh: "",
     });
+
+    /* NEW – oauth2 secrets generation */
+    const newOauth2 = makeOauth2Secrets(oauth2Apps);
+    setOauth2Secrets(newOauth2);
   }
 
   /* ZIP builder -------------------------------------------- */
@@ -307,6 +339,14 @@ export default function App() {
   };
   const selectAll   = () => setSel(new Set(apps.map((a) => a.name)));
   const unselectAll = () => setSel(new Set());
+
+  /* helper – mutate oauth2 secret field -------------------- */
+  function updateOauth2(name, field, val) {
+    setOauth2Secrets((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], [field]: val },
+    }));
+  }
 
   /* nav ---------------------------------------------------- */
   const Nav = ({ next = true }) => (
@@ -491,7 +531,7 @@ export default function App() {
           </>
         );
 
-      /* 5 ─ Secrets */ case 5:
+      /* 5 ─ Secrets (UPDATED) */ case 5:
         return (
           <>
             <h2>Step 5 – Secrets</h2>
@@ -500,6 +540,7 @@ export default function App() {
               <Spinner size={32} />
             ) : (
               <>
+                {/* existing secrets --------------------------------------- */}
                 <label>SSH public key</label>
                 <div className="key-wrap">
                   <pre className="key-block pub">{keys.publicKey}</pre>
@@ -555,10 +596,69 @@ export default function App() {
                   </li>
                 </ul>
 
+                {/* NEW – oauth2 apps secrets ------------------------------- */}
+                {oauth2Apps.length > 0 && (
+                  <>
+                    <h3 style={{ marginTop: "2rem" }}>OAuth2 application secrets</h3>
+                    {oauth2Apps.map((name) => {
+                      const sec = oauth2Secrets[name] || {};
+                      return (
+                        <div key={name} style={{ marginBottom: "1.4rem" }}>
+                          <strong>{name}</strong>
+                          <div style={{ display: "grid", gap: ".6rem", marginTop: ".6rem" }}>
+                            <input
+                              className="wizard-input"
+                              placeholder="Client ID"
+                              value={sec.clientId}
+                              onChange={(e) =>
+                                updateOauth2(name, "clientId", e.target.value)
+                              }
+                            />
+                            <input
+                              className="wizard-input"
+                              placeholder="Client secret"
+                              type="password"
+                              value={sec.clientSecret}
+                              onChange={(e) =>
+                                updateOauth2(name, "clientSecret", e.target.value)
+                              }
+                            />
+                            <div className="key-wrap">
+                              <pre className="key-block pub">
+                                {sec.cookieSecret}
+                              </pre>
+                              <CopyBtn
+                                text={sec.cookieSecret}
+                                className="action-btn key-copy"
+                                onCopied={() => toast("Copied!")}
+                              />
+                            </div>
+                            <div className="key-wrap">
+                              <pre className="key-block pub">
+                                {sec.redisPassword}
+                              </pre>
+                              <CopyBtn
+                                text={sec.redisPassword}
+                                className="action-btn key-copy"
+                                onCopied={() => toast("Copied!")}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {oauth2ClientMiss && (
+                      <p className="error">
+                        Enter Client ID and Client secret for every OAuth2 app.
+                      </p>
+                    )}
+                  </>
+                )}
+
                 <button className="btn-secondary" onClick={regenAll}>
                   Regenerate all secrets
                 </button>
-                <Nav />
+                <Nav next={!oauth2ClientMiss} />
               </>
             )}
           </>
@@ -625,7 +725,7 @@ export default function App() {
                           ⧉ File
                         </AsyncCopyBtn>
                         <AsyncCopyBtn
-                          getText={async () => oneLiner(s, await getFile(s))}
+                          getText={async () => oneLiner(s, await getFile(s)) }
                           onCopied={() => toast("Copied one-liner!")}
                         >
                           ⧉ One-liner
@@ -645,7 +745,7 @@ export default function App() {
                               installRancher,
                             );
                           }}
-                          onCopied={() => toast("Copied one-liner + secrets!")}
+                          onCopied={() => toast("Copied one-liner + secrets!") }
                         >
                           ⧉ One-liner&nbsp;+&nbsp;secrets
                         </AsyncCopyBtn>
@@ -659,7 +759,7 @@ export default function App() {
           </>
         );
 
-      /* 9 ─ Overview */ case 9:
+      /* 9 ─ Overview (UPDATED) */ case 9:
         return (
           <>
             <h2>Step 9 – Overview 🎉</h2>
@@ -757,6 +857,31 @@ export default function App() {
                     )}
                   </td>
                 </tr>
+
+                {/* NEW – oauth2 secrets overview --------------------- */}
+                {oauth2Apps.flatMap((name) => {
+                  const sec = oauth2Secrets[name] || {};
+                  return [
+                    ["Client ID", sec.clientId],
+                    ["Client secret", sec.clientSecret],
+                    ["Cookie secret", sec.cookieSecret],
+                    ["Redis password", sec.redisPassword],
+                  ].map(([label, val], idx) => (
+                    <tr key={`${name}-${idx}`}>
+                      <th>{name} – {label}</th>
+                      <td>{val || "—"}</td>
+                      <td>
+                        {val && (
+                          <CopyBtn
+                            text={val}
+                            className="tiny-btn"
+                            onCopied={() => toast("Copied!")}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ));
+                })}
               </tbody>
             </table>
             <button
