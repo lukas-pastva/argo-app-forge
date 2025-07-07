@@ -3,6 +3,8 @@
     • listApps() → returns rich meta (icon, desc, …)
     • buildZip() → prunes charts/external to only referenced paths
                     (except: we no longer delete remote-chart dirs)
+                    + NEW 2025-07-07
+                      ▶ uncomment # oauth2-<app> BEGIN … END blocks
 */
 
 import fs       from "fs/promises";
@@ -17,7 +19,38 @@ import cfg      from "./config.js";
 async function exists(p){ try{ await fs.access(p); return true; }catch{return false;} }
 const iconFiles = ["icon.png","icon.jpg","icon.jpeg","icon.svg","logo.png","logo.svg"];
 
-/* grab meta from a local chart dir */
+/* ───────────────────────────────────────────────────────────────
+   NEW ➊ – Uncomment everything between
+           “# oauth2-<app> BEGIN” … “# oauth2-<app> END”
+   Marker lines stay commented; only the lines *inside* lose their “# ”
+──────────────────────────────────────────────────────────────── */
+function uncommentOauth2Blocks(text, activeApps = new Set()){
+  const out   = [];
+  let inBlock = false;
+
+  for (const line of text.split(/\r?\n/)){
+    const beg = line.match(/^\s*#\s*(oauth2-[\w-]+)\s+BEGIN/i);
+    if (beg){
+      inBlock = activeApps.has(beg[1]);
+      out.push(line);                 // keep BEGIN marker
+      continue;
+    }
+    if (/^\s*#\s*oauth2-[\w-]+\s+END/i.test(line)){
+      inBlock = false;
+      out.push(line);                 // keep END marker
+      continue;
+    }
+    if (inBlock){
+      // Strip exactly one leading “# ” or “#”.
+      out.push(line.replace(/^\s*#\s?/, ""));
+    }else{
+      out.push(line);
+    }
+  }
+  return out.join("\n");
+}
+
+/* grab meta from a local chart dir ---------------------------------------- */
 async function chartMeta(root, chartRel){
   let dir = path.join(root, chartRel);
 
@@ -27,7 +60,7 @@ async function chartMeta(root, chartRel){
     dir = path.join(root, "charts", chartRel);
   }
   const files = await fg(["Chart.yaml","chart.yaml"],{cwd:dir,absolute:true});
-  if (!files.length) return {};                         // no Chart.yaml → no meta
+  if (!files.length) return {};                         // no Chart.yaml ⇒ no meta
 
   const meta  = yaml.load(await fs.readFile(files[0],"utf8")) || {};
   const iconF = meta.icon ? [meta.icon] : iconFiles;
@@ -67,7 +100,7 @@ async function chartMeta(root, chartRel){
   };
 }
 
-/* locate every app-of-apps file once */
+/* locate every app-of-apps file once -------------------------------------- */
 async function appFiles(root){
   const f = await fg(cfg.appsGlob,{cwd:root,absolute:true});
   if (!f.length) throw new Error(`No file matched APPS_GLOB="${cfg.appsGlob}"`);
@@ -93,9 +126,6 @@ export async function listApps(){
 }
 
 /* ── 2)  Build ZIP ──────────────────────────────────────────── */
-// keepNames     … array of Application names to keep
-// repoReplace   … actual repo URL entered in the wizard (for ${REPO_TOKEN_INPUT})
-// domainReplace … domain entered in the wizard     (for ${DOMAIN_TOKEN_INPUT})
 export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   const root  = await ensureRepo();
   const files = await appFiles(root);
@@ -119,9 +149,7 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
   await fs.rm(tmp,{recursive:true,force:true});
   await fs.cp(root, tmp, {
     recursive: true,
-    /*  ⬇ filter callback runs for every path being copied
-        path.relative(root, src) == "" for the root itself; we allow that.
-        Any segment titled “.git” is excluded (both root & nested).          */
+    /* filter callback runs for every path being copied */
     filter: (src/*, dest*/) => {
       const rel = path.relative(root, src);
       return !rel.split(path.sep).includes(".git");
@@ -147,10 +175,8 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
       await fs.rm(path.join(tmp,rel));
 
   /* -----------------------------------------------------------------------
-     ⬇️  IMPORTANT CHANGE –––
      We *keep* every directory under external/** and charts/external/**.
-     The earlier logic that deleted unreferenced dirs is gone, so
-     remote charts (that have no .path) remain intact in the ZIP.
+     The earlier logic that deleted unreferenced dirs is gone.
      --------------------------------------------------------------------- */
 
   /* multi-token replacement ----------------------------------- */
@@ -170,6 +196,22 @@ export async function buildZip(keepNames, repoReplace="", domainReplace=""){
       }
       if (changed) await fs.writeFile(p,txt);
     }));
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     NEW ➋ – OAuth2: uncomment blocks for the selected oauth2-apps
+  ───────────────────────────────────────────────────────────── */
+  const oauth2Set = new Set(keepNames.filter(n => n.startsWith("oauth2-")));
+  if (oauth2Set.size){
+    const yamls = await fg(['values/**/*.ya?ml'], { cwd: tmp });
+    await Promise.all(
+      yamls.map(async rel => {
+        const p   = path.join(tmp, rel);
+        const txt = await fs.readFile(p, "utf8");
+        const mod = uncommentOauth2Blocks(txt, oauth2Set);
+        if (mod !== txt) await fs.writeFile(p, mod);
+      })
+    );
   }
 
   /* stream ZIP – root folder = main domain (if provided) */
