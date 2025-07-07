@@ -1,5 +1,5 @@
 // src/frontend/src/App.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import Spinner     from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
@@ -205,6 +205,46 @@ export default function App() {
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size > 0;
   const canZip     = domainOK && repoOK && appsChosen;
+
+  /* ──────────────────────────────────────────────────────────
+     NEW ➊ – advance-on-Enter key handler
+     • reacts only inside the wizard (ignores modals)
+     • moves forward when the current step is allowed to proceed
+  ────────────────────────────────────────────────────────── */
+  const advanceIfAllowed = useCallback(() => {
+    const allowed =
+      (step === 0) ? true :
+      (step === 1) ? domainOK :
+      (step === 2) ? repoOK   :
+      (step === 3) ? appsChosen :
+      (step === 4) ? true :
+      /* steps 5-8 have no extra validation */ true;
+
+    if (!allowed) return;
+    if (step < steps.length - 1) setStep(step + 1);
+  }, [step, domainOK, repoOK, appsChosen]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== "Enter") return;
+      /* ignore if a modal is open (AppDetails, preview dialogs, etc.) */
+      if (document.querySelector(".modal-overlay")) return;
+      /* ignore multi-line editors (Monaco & textareas) */
+      const el = document.activeElement;
+      if (
+        el &&
+        (el.tagName === "TEXTAREA" ||
+          (el.getAttribute("role") === "textbox" && el.contentEditable === "true"))
+      ) {
+        return;
+      }
+      /* prevent form submission side-effects */
+      e.preventDefault();
+      advanceIfAllowed();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [advanceIfAllowed]);
 
   /* auto-download ZIP -------------------------------------- */
   useEffect(() => {
@@ -681,43 +721,41 @@ export default function App() {
                 <tr>
                   <th>SSH public key</th>
                   <td>
-                    <div className="key-wrap">
-                      <pre className="key-block pub">
-                        {keys
-                          ? keys.publicKey.split("\n").slice(0, 2).join("\n") + "\n…"
-                          : "—"}
-                      </pre>
-                      {keys && (
-                        <CopyBtn
-                          text={keys.publicKey}
-                          className="action-btn key-copy"
-                          onCopied={() => toast("Copied!")}
-                        />
-                      )}
-                    </div>
+                    <pre className="key-block pub">
+                      {keys
+                        ? keys.publicKey.split("\n").slice(0, 2).join("\n") + "\n…"
+                        : "—"}
+                    </pre>
                   </td>
-                  <td></td>
+                  <td>
+                    {keys && (
+                      <CopyBtn
+                        text={keys.publicKey}
+                        className="tiny-btn"
+                        onCopied={() => toast("Copied!")}
+                      />
+                    )}
+                  </td>
                 </tr>
 
                 <tr>
                   <th>SSH private key</th>
                   <td>
-                    <div className="key-wrap">
-                      <pre className="key-block priv">
-                        {keys
-                          ? keys.privateKey.split("\n").slice(0, 2).join("\n") + "\n…"
-                          : "—"}
-                      </pre>
-                      {keys && (
-                        <CopyBtn
-                          text={keys.privateKey}
-                          className="action-btn key-copy"
-                          onCopied={() => toast("Copied!")}
-                        />
-                      )}
-                    </div>
+                    <pre className="key-block priv">
+                      {keys
+                        ? keys.privateKey.split("\n").slice(0, 2).join("\n") + "\n…"
+                        : "—"}
+                    </pre>
                   </td>
-                  <td></td>
+                  <td>
+                    {keys && (
+                      <CopyBtn
+                        text={keys.privateKey}
+                        className="tiny-btn"
+                        onCopied={() => toast("Copied!")}
+                      />
+                    )}
+                  </td>
                 </tr>
               </tbody>
             </table>
