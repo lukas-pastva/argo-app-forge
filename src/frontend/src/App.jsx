@@ -8,10 +8,24 @@ import "./App.css";
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
-const rand      = () =>
-  crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
-const genToken  = () => rand() + rand();
-const genPass   = () => rand();
+
+/**
+ * Generate a cryptographically-secure random AES key of the
+ * requested byte length (16, 24 or 32) and return it Base64-encoded.
+ */
+function genAesKey(bytes = 32) {
+  if (![16, 24, 32].includes(bytes)) {
+    throw new Error("AES key length must be 16, 24 or 32 bytes");
+  }
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  // Base64 encode raw bytes
+  return btoa(String.fromCharCode(...arr));
+}
+
+// Keep a separate random password for redis (still 10 chars):
+const rand    = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const genPass = () => rand();
 
 /* NEW – identify oauth2-apps */
 const isOauth2 = (name = "") => name.toLowerCase().startsWith("oauth2-");
@@ -23,7 +37,7 @@ function makeOauth2Secrets(appNames = []) {
     out[n] = {
       clientId      : "",
       clientSecret  : "",
-      cookieSecret  : genToken(),
+      cookieSecret  : genAesKey(32),
       redisPassword : genPass(),
     };
   }
@@ -309,7 +323,7 @@ export default function App() {
       .then(setKeys)
       .finally(() => setBusyKey(false));
 
-    setToken(genToken());
+    setToken(rand());
     setPwds({
       argocd: genPass(),
       keycloak: genPass(),
