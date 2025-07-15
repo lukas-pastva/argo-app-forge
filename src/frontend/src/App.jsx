@@ -9,35 +9,22 @@ const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
 
-/**
- * Generate a cryptographically-secure random AES key of the
- * requested byte length (16, 24 or 32) and return it Base64-encoded.
- */
-function genAesKey(bytes = 32) {
-  if (![16, 24, 32].includes(bytes)) {
-    throw new Error("AES key length must be 16, 24 or 32 bytes");
-  }
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  // Base64 encode raw bytes
-  return btoa(String.fromCharCode(...arr));
-}
+/* random helpers ------------------------------------------- */
+const rand       = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const genPass    = () => rand();                       // 10‑char password
+const genCookie  = () => crypto.randomUUID().replace(/-/g, ""); // 32‑char AES key
 
-// Keep a separate random password for redis (still 10 chars):
-const rand    = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
-const genPass = () => rand();
-
-/* NEW – identify oauth2-apps */
+/* NEW – identify oauth2‑apps */
 const isOauth2 = (name = "") => name.toLowerCase().startsWith("oauth2-");
 
-/* NEW – build secret bundle for every oauth2-app ---------------- */
+/* NEW – secret bundle for every oauth2‑app ----------------- */
 function makeOauth2Secrets(appNames = []) {
   const out = {};
   for (const n of appNames) {
     out[n] = {
       clientId      : "",
       clientSecret  : "",
-      cookieSecret  : genAesKey(32),
+      cookieSecret  : genCookie(),
       redisPassword : genPass(),
     };
   }
@@ -53,7 +40,7 @@ function pickDelimiter(body, base = "EOF") {
   }
 }
 
-/* ── one-liner helpers (updated) ───────────────────────────── */
+/* ── one‑liner helpers (unchanged logic) ─────────────────── */
 const oneLiner = (n, body) => {
   const delim = pickDelimiter(body);
   return [
@@ -65,10 +52,7 @@ const oneLiner = (n, body) => {
 };
 
 /**
- *  NEW: now exports all OAuth2 secrets in ENV vars.
- *
- *  - apps list →  OAUTH2_APPS="oauth2-google oauth2-github"
- *  - each app   →  OAUTH2_GOOGLE_CLIENT_ID=…  (and the other 3 keys)
+ * Builds the “one‑liner + secrets” helper with oauth2 env‑vars.
  */
 const oneLinerSecrets = (
   n,
@@ -77,7 +61,7 @@ const oneLinerSecrets = (
   rancherToken,
   gitRepoUrl,
   installRancher = false,
-  oauth2Secrets = {},            // ← NEW
+  oauth2Secrets = {},
 ) => {
   const lines = [
     `export GIT_REPO_URL="${gitRepoUrl}"`,
