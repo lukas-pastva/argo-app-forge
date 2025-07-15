@@ -9,59 +9,55 @@ const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
 
-/* random helpers ------------------------------------------- */
-const rand       = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
-const genPass    = () => rand();                       // 10‑char password
-const genCookie  = () => crypto.randomUUID().replace(/-/g, ""); // 32‑char AES key
+/* random helpers ----------------------------------------------------------- */
+const rand        = () =>
+  crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const genPass     = () => rand();                          // 10‑char password
+const genCookie   = () => crypto.randomUUID().replace(/-/g, ""); // 32‑char key
 
-/* NEW – identify oauth2‑apps */
-const isOauth2 = (name = "") => name.toLowerCase().startsWith("oauth2-");
+/* OAuth2 app detector ------------------------------------------------------ */
+const isOauth2 = (n = "") => n.toLowerCase().startsWith("oauth2-");
 
-/* NEW – secret bundle for every oauth2‑app ----------------- */
+/* build secret bundle for every OAuth2 app -------------------------------- */
 function makeOauth2Secrets(appNames = []) {
   const out = {};
   for (const n of appNames) {
     out[n] = {
       clientId      : "",
       clientSecret  : "",
-      cookieSecret  : genCookie(),
+      cookieSecret  : genCookie(),      // 32 ASCII chars
       redisPassword : genPass(),
     };
   }
   return out;
 }
 
-/* ── NEW: pick a unique heredoc delimiter ─────────────────── */
+/* heredoc delimiter helper ------------------------------------------------- */
 function pickDelimiter(body, base = "EOF") {
   if (!body.includes(`\n${base}\n`)) return base;
   while (true) {
-    const random = `${base}_${rand().slice(0, 6).toUpperCase()}`;
-    if (!body.includes(`\n${random}\n`)) return random;
+    const rnd = `${base}_${rand().slice(0, 6).toUpperCase()}`;
+    if (!body.includes(`\n${rnd}\n`)) return rnd;
   }
 }
 
-/* ── one‑liner helpers (unchanged logic) ─────────────────── */
-const oneLiner = (n, body) => {
-  const delim = pickDelimiter(body);
-  return [
-    `cat <<'${delim}' > ${n}`,
-    body.trimEnd(),
-    delim,
-    `sudo -E bash ${n}`,
-  ].join("\n");
+/* one‑liner scaffolding ---------------------------------------------------- */
+const oneLiner = (name, body) => {
+  const d = pickDelimiter(body);
+  return [`cat <<'${d}' > ${name}`, body.trimEnd(), d, `sudo -E bash ${name}`]
+    .join("\n");
 };
 
-/**
- * Builds the “one‑liner + secrets” helper with oauth2 env‑vars.
- */
+/* one‑liner + secrets (NEW: selectedApps export) --------------------------- */
 const oneLinerSecrets = (
-  n,
+  name,
   body,
   priv,
   rancherToken,
   gitRepoUrl,
   installRancher = false,
   oauth2Secrets = {},
+  selectedApps = []          // ← NEW
 ) => {
   const lines = [
     `export GIT_REPO_URL="${gitRepoUrl}"`,
@@ -70,38 +66,28 @@ const oneLinerSecrets = (
     `export KEYCLOAK_PASS="${priv.keycloak}"`,
     `export RANCHER_PASS="${priv.rancher}"`,
     `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
+    `export SELECTED_APPS="${selectedApps.join(" ")}"`,   // ← NEW
   ];
-
   if (installRancher) lines.push(`export INSTALL_RANCHER="true"`);
 
-  /* ── OAuth2 bundle ─────────────────────────────────────────── */
+  /* OAuth2 bundle --------------------------------------------------------- */
   const apps = Object.keys(oauth2Secrets);
   if (apps.length) {
     lines.push(`export OAUTH2_APPS="${apps.join(" ")}"`);
-
-    for (const name of apps) {
-      const env = name.toUpperCase().replace(/-/g, "_");  // oauth2-google → OAUTH2_GOOGLE
-      const sec = oauth2Secrets[name] || {};
-
+    for (const n of apps) {
+      const env = n.toUpperCase().replace(/-/g, "_");
+      const s   = oauth2Secrets[n] || {};
       lines.push(
-        `export ${env}_CLIENT_ID="${sec.clientId}"`,
-        `export ${env}_CLIENT_SECRET="${sec.clientSecret}"`,
-        `export ${env}_COOKIE_SECRET="${sec.cookieSecret}"`,
-        `export ${env}_REDIS_PASSWORD="${sec.redisPassword}"`,
+        `export ${env}_CLIENT_ID="${s.clientId}"`,
+        `export ${env}_CLIENT_SECRET="${s.clientSecret}"`,
+        `export ${env}_COOKIE_SECRET="${s.cookieSecret}"`,
+        `export ${env}_REDIS_PASSWORD="${s.redisPassword}"`
       );
     }
   }
 
-  /* write script → sudo-run */
-  lines.push("", oneLiner(n, body));
-
-  /* 🔒 wipe this shell’s history so secrets don’t stay in ~/.bash_history */
-  lines.push(
-    "",
-    "# wipe the interactive shell history (non-sudo user)",
-    "unset HISTFILE && history -c || true",
-  );
-
+  /* embed script, wipe history, done ------------------------------------- */
+  lines.push("", oneLiner(name, body), "", "unset HISTFILE && history -c || true");
   return lines.join("\n");
 };
 
