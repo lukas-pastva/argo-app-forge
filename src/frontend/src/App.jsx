@@ -749,7 +749,8 @@ export default function App() {
                               token,
                               repo.trim(),
                               installRancher,
-                              oauth2Secrets,             // ← NEW ARG
+                              oauth2Secrets,
+                              [...sel]
                             );
                           }}
                           onCopied={() => toast("Copied one-liner + secrets!") }
