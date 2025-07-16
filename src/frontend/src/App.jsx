@@ -1,11 +1,5 @@
 // src/frontend/src/App.jsx
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,            // ← NEW (for namespace grouping)
-} from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import Spinner     from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
@@ -186,7 +180,7 @@ export default function App() {
   /* state --------------------------------------------------- */
   const [domain, setDomain]   = useState("");
   const [repo, setRepo]       = useState("");
-  const [apps, setApps]       = useState([]);          // [{name,namespace?,…meta}]
+  const [apps, setApps]       = useState([]);
   const [sel, setSel]         = useState(new Set());
   const [open, setOpen]       = useState(new Set());
 
@@ -246,25 +240,6 @@ export default function App() {
            !oauth2Secrets[n].clientId.trim() ||
            !oauth2Secrets[n].clientSecret.trim()
   );
-
-  /* ──────────────────────────────────────────────────────────
-     Namespace grouping (Step 3 UI)
-     apps[] comes with .namespace (backend) – fallback "default".
-  ────────────────────────────────────────────────────────── */
-  const nsGroups = useMemo(() => {
-    const m = new Map();
-    for (const a of apps) {
-      const ns = (a.namespace || "default").trim() || "default";
-      if (!m.has(ns)) m.set(ns, []);
-      m.get(ns).push(a);
-    }
-    /* stable sort: default first, then alpha */
-    return [...m.entries()].sort(([a],[b]) => {
-      if (a === "default" && b !== "default") return -1;
-      if (b === "default" && a !== "default") return 1;
-      return a.localeCompare(b);
-    });
-  }, [apps]);
 
   /* ──────────────────────────────────────────────────────────
      NEW ➊ – advance-on-Enter key handler with extra validation
@@ -457,7 +432,7 @@ export default function App() {
           </>
         );
 
-      /* 3 ─ Apps (UPDATED: grouped by namespace) */ case 3:
+      /* 3 ─ Apps */ case 3:
         return (
           <>
             <h2>Step 3 – Choose applications</h2>
@@ -470,92 +445,72 @@ export default function App() {
                 Un-select all
               </button>
             </div>
-
-            {/* namespace groups */}
-            {nsGroups.map(([ns, group]) => {
-              const selCount = group.reduce(
-                (n, a) => n + (sel.has(a.name) ? 1 : 0),
-                0
-              );
-              const label =
-                ns === "default" ? "(no namespace specified)" : ns;
-              return (
-                <div key={ns} className="ns-group">
-                  <div className="ns-group-header">
-                    <span>{label}</span>
-                    <small>
-                      {selCount}/{group.length} selected
-                    </small>
-                  </div>
-                  <ul className="apps-list">
-                    {group.map((a) => {
-                      const hasInfo = a.desc || a.maint || a.home || a.readme;
-                      const opened = open.has(a.name);
-                      return (
-                        <li key={a.name}>
-                          <div
-                            className="app-item"
-                            data-selected={sel.has(a.name)}
-                            onClick={() => toggleSel(a.name)}
-                          >
-                            <input
-                              type="checkbox"
-                              readOnly
-                              checked={sel.has(a.name)}
-                            />
-                            {a.icon ? (
-                              <img src={a.icon} alt="" width={24} height={24} />
-                            ) : (
-                              "📦"
-                            )}
-                            <span className="app-name">{a.name}</span>
-                            <button
-                              className="info-btn"
-                              disabled={!hasInfo}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleOpen(a.name);
-                              }}
+            <ul className="apps-list">
+              {apps.map((a) => {
+                const hasInfo =
+                  a.desc || a.maint || a.home || a.readme;
+                const opened = open.has(a.name);
+                return (
+                  <li key={a.name}>
+                    <div
+                      className="app-item"
+                      data-selected={sel.has(a.name)}
+                      onClick={() => toggleSel(a.name)}
+                    >
+                      <input
+                        type="checkbox"
+                        readOnly
+                        checked={sel.has(a.name)}
+                      />
+                      {a.icon ? (
+                        <img src={a.icon} alt="" width={24} height={24} />
+                      ) : (
+                        "📦"
+                      )}
+                      <span className="app-name">{a.name}</span>
+                      <button
+                        className="info-btn"
+                        disabled={!hasInfo}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleOpen(a.name);
+                        }}
+                      >
+                        {opened ? "▲" : "ℹ️"}
+                      </button>
+                    </div>
+                    {opened && (
+                      <div className="app-more">
+                        {a.desc && <p>{a.desc}</p>}
+                        {a.maint && (
+                          <p>
+                            <strong>Maintainers:</strong> {a.maint}
+                          </p>
+                        )}
+                        {a.home && (
+                          <p>
+                            <strong>Home:</strong>{" "}
+                            <a
+                              href={a.home}
+                              target="_blank"
+                              rel="noreferrer"
                             >
-                              {opened ? "▲" : "ℹ️"}
-                            </button>
-                          </div>
-                          {opened && (
-                            <div className="app-more">
-                              {a.desc && <p>{a.desc}</p>}
-                              {a.maint && (
-                                <p>
-                                  <strong>Maintainers:</strong> {a.maint}
-                                </p>
-                              )}
-                              {a.home && (
-                                <p>
-                                  <strong>Home:</strong>{" "}
-                                  <a
-                                    href={a.home}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {a.home}
-                                  </a>
-                                </p>
-                              )}
-                              {a.readme && (
-                                <details>
-                                  <summary>README preview</summary>
-                                  <pre>{a.readme}</pre>
-                                </details>
-                              )}
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
-
+                              {a.home}
+                            </a>
+                          </p>
+                        )}
+                        {a.readme && (
+                          <details>
+                            <summary>README preview</summary>
+                            <pre>{a.readme}</pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
             <Nav next={appsChosen} />
           </>
         );
