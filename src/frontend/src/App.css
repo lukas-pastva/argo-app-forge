@@ -187,7 +187,7 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 }
 .btn:hover{background:var(--primary-hov);}
 
-/* ── grey-out when disabled ──────────────────────────────── */
+/* ── grey-out when disabled ───────────────────────────────────────────── */
 .btn:disabled{
   background:#c4c8cd;                 /* neutral grey  */
   border-color:#c4c8cd;
@@ -201,7 +201,7 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 .apps-actions{display:flex;gap:.75rem;margin-bottom:.9rem;}
 
 /* ────────────────────────────────────────────────────────────────
-   APP GRID
+   APP GRID (individual cards)
    ────────────────────────────────────────────────────────────── */
 .apps-header{font-weight:500;margin-bottom:.7rem;}
 .apps-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.9rem;list-style:none;}
@@ -257,6 +257,30 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 .app-more pre{
   white-space:pre-wrap;background:#f5f7f9;border:1px solid var(--border);
   padding:.6rem .8rem;border-radius:6px;margin-top:.4rem;font-size:.82rem;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   NEW: Namespace Group wrapper around app grids (Step 3)
+   ────────────────────────────────────────────────────────────── */
+.apps-ns-group{
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1.1rem 1.2rem 1.4rem;
+  margin-bottom:1.6rem;
+}
+.apps-ns-group h3{
+  margin:0 0 1rem;
+  font-size:1.05rem;
+  line-height:1.2;
+}
+.apps-ns-group[data-selected="true"]{
+  border-color:var(--primary);
+}
+.apps-ns-count{
+  font-weight:400;
+  font-size:.85rem;
+  color:var(--text-light);
+  margin-left:.4rem;
 }
 
 /* ────────────────────────────────────────────────────────────────

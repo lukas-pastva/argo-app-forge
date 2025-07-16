@@ -2,6 +2,10 @@
     ───────────────────────────────────────────────────────────────
     • buildZip() now preserves YAML indentation when uncommenting
       oauth2 blocks: only the “# ” marker is removed.
+    • listApps() now ALSO returns the *namespace* each application
+      came from (taken from the parent `appProjects[].namespace`
+      key in every app‑of‑apps YAML).  This enables the front‑end
+      to group apps visually by namespace in Step 3.
 */
 
 import fs       from "fs/promises";
@@ -106,22 +110,38 @@ async function appFiles(root){
   return f;
 }
 
-/* ── 1)  Flatten Applications with meta ─────────────────────── */
+/* ── 1)  Flatten Applications with meta  *and namespace*  ──────
+       Shape of each item:
+         {
+           name:        "<app name>",
+           namespace:   "<appProjects[].namespace | 'default'>",
+           icon, desc, maint, home, readme
+         }
+       Duplicates (same app name across multiple files/projects) are
+       de‑duplicated; the *first* occurrence wins (keeps original namespace).
+---------------------------------------------------------------- */
 export async function listApps(){
   const root  = await ensureRepo();
   const files = await appFiles(root);
-  const map   = new Map();                                  // name → meta
+
+  const seenNames = new Set();
+  const out = [];
 
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects||[])
+    for (const proj of doc.appProjects||[]){
+      const ns = proj.namespace || proj.name || "default";
       for (const app of proj.applications||[]){
-        if (map.has(app.name)) continue;                    // de-dupe by name
-        if (app.path) map.set(app.name, await chartMeta(root, app.path));
-        else          map.set(app.name, {});                // remote chart
+        if (seenNames.has(app.name)) continue;    // de-dupe by name
+        seenNames.add(app.name);
+
+        const meta = app.path ? await chartMeta(root, app.path) : {};
+        out.push({ name: app.name, namespace: ns, ...meta });
       }
+    }
   }
-  return [...map.entries()].map(([name,meta]) => ({ name, ...meta }));
+
+  return out;
 }
 
 /* ── 2)  Build ZIP ──────────────────────────────────────────── */

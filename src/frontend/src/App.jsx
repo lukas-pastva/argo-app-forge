@@ -180,7 +180,7 @@ export default function App() {
   /* state --------------------------------------------------- */
   const [domain, setDomain]   = useState("");
   const [repo, setRepo]       = useState("");
-  const [apps, setApps]       = useState([]);
+  const [apps, setApps]       = useState([]);  // ← backend now includes {namespace}
   const [sel, setSel]         = useState(new Set());
   const [open, setOpen]       = useState(new Set());
 
@@ -371,6 +371,116 @@ export default function App() {
   /* intro one-liner --------------------------------------- */
   const Intro = ({ i }) => <p className="intro">{steps[i].desc}</p>;
 
+  /* ──────────────────────────────────────────────────────────
+     RENDER HELPERS – App card + grouped layout (Step 3)
+     Backend now supplies `a.namespace` for each app.
+  ────────────────────────────────────────────────────────── */
+
+  function AppCard({ a }) {
+    const hasInfo =
+      a.desc || a.maint || a.home || a.readme;
+    const opened = open.has(a.name);
+    return (
+      <li key={a.name}>
+        <div
+          className="app-item"
+          data-selected={sel.has(a.name)}
+          onClick={() => toggleSel(a.name)}
+        >
+          <input
+            type="checkbox"
+            readOnly
+            checked={sel.has(a.name)}
+          />
+          {a.icon ? (
+            <img src={a.icon} alt="" width={24} height={24} />
+          ) : (
+            "📦"
+          )}
+          <span className="app-name">{a.name}</span>
+          <button
+            className="info-btn"
+            disabled={!hasInfo}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleOpen(a.name);
+            }}
+          >
+            {opened ? "▲" : "ℹ️"}
+          </button>
+        </div>
+        {opened && (
+          <div className="app-more">
+            {a.desc && <p>{a.desc}</p>}
+            {a.maint && (
+              <p>
+                <strong>Maintainers:</strong> {a.maint}
+              </p>
+            )}
+            {a.home && (
+              <p>
+                <strong>Home:</strong>{" "}
+                <a
+                  href={a.home}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {a.home}
+                </a>
+              </p>
+            )}
+            {a.readme && (
+              <details>
+                <summary>README preview</summary>
+                <pre>{a.readme}</pre>
+              </details>
+            )}
+          </div>
+        )}
+      </li>
+    );
+  }
+
+  function renderGroupedApps() {
+    /* preserve original YAML ordering:
+       we reduce across `apps` in array order and push onto an ordered list */
+    const order = [];
+    const groups = {};
+    for (const a of apps) {
+      const ns = a.namespace || "default";
+      if (!groups[ns]) {
+        groups[ns] = [];
+        order.push(ns);
+      }
+      groups[ns].push(a);
+    }
+
+    return order.map((ns) => {
+      const arr = groups[ns];
+      /* highlight group border if ANY app within is selected */
+      const anySel = arr.some((a) => sel.has(a.name));
+      return (
+        <div
+          key={ns}
+          className="apps-ns-group"
+          data-selected={anySel}
+        >
+          <h3>
+            {ns}
+            <span className="apps-ns-count">
+              ({arr.length}{arr.length === 1 ? " app" : " apps"})
+            </span>
+          </h3>
+          <ul className="apps-list">
+            {arr.map((a) => (
+              <AppCard key={a.name} a={a} />
+            ))}
+          </ul>
+        </div>
+      );
+    });
+  }
+
   /* renderer ----------------------------------------------- */
   function renderStep() {
     switch (step) {
@@ -432,7 +542,7 @@ export default function App() {
           </>
         );
 
-      /* 3 ─ Apps */ case 3:
+      /* 3 ─ Apps (GROUPED BY NAMESPACE) */ case 3:
         return (
           <>
             <h2>Step 3 – Choose applications</h2>
@@ -445,72 +555,10 @@ export default function App() {
                 Un-select all
               </button>
             </div>
-            <ul className="apps-list">
-              {apps.map((a) => {
-                const hasInfo =
-                  a.desc || a.maint || a.home || a.readme;
-                const opened = open.has(a.name);
-                return (
-                  <li key={a.name}>
-                    <div
-                      className="app-item"
-                      data-selected={sel.has(a.name)}
-                      onClick={() => toggleSel(a.name)}
-                    >
-                      <input
-                        type="checkbox"
-                        readOnly
-                        checked={sel.has(a.name)}
-                      />
-                      {a.icon ? (
-                        <img src={a.icon} alt="" width={24} height={24} />
-                      ) : (
-                        "📦"
-                      )}
-                      <span className="app-name">{a.name}</span>
-                      <button
-                        className="info-btn"
-                        disabled={!hasInfo}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleOpen(a.name);
-                        }}
-                      >
-                        {opened ? "▲" : "ℹ️"}
-                      </button>
-                    </div>
-                    {opened && (
-                      <div className="app-more">
-                        {a.desc && <p>{a.desc}</p>}
-                        {a.maint && (
-                          <p>
-                            <strong>Maintainers:</strong> {a.maint}
-                          </p>
-                        )}
-                        {a.home && (
-                          <p>
-                            <strong>Home:</strong>{" "}
-                            <a
-                              href={a.home}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {a.home}
-                            </a>
-                          </p>
-                        )}
-                        {a.readme && (
-                          <details>
-                            <summary>README preview</summary>
-                            <pre>{a.readme}</pre>
-                          </details>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+
+            {/* grouped layout */}
+            {renderGroupedApps()}
+
             <Nav next={appsChosen} />
           </>
         );
