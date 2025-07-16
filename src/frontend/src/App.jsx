@@ -441,7 +441,7 @@ export default function App() {
 
       /* 2 ─ Repo */ case 2:
         return (
-          <<>
+          <>
             <h2>Step 2 – Git repository (SSH)</h2>
             <Intro i={2} />
             <input
