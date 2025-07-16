@@ -201,7 +201,7 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 .apps-actions{display:flex;gap:.75rem;margin-bottom:.9rem;}
 
 /* ────────────────────────────────────────────────────────────────
-   APP GRID
+   APP GRID  (base card styles reused in namespace groups)
    ────────────────────────────────────────────────────────────── */
 .apps-header{font-weight:500;margin-bottom:.7rem;}
 .apps-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.9rem;list-style:none;}
@@ -217,6 +217,37 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
 .fallback-ico{font-size:1.1rem;}
 .app-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
+/* ────────────────────────────────────────────────────────────────
+   NEW: Namespace grouping wrapper for wizard “Choose applications”
+   ────────────────────────────────────────────────────────────── */
+.ns-group{
+  margin:1.2rem 0;
+  padding:1.1rem 1.2rem 1.4rem;
+  border:2px solid var(--border);
+  border-radius:10px;
+  background:var(--card);
+}
+[data-theme='dark'] .ns-group{background:#1b2026;}
+.ns-group-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin:0 0 .9rem;
+  padding:0 0 .4rem;
+  border-bottom:1px dashed var(--border);
+  font-weight:600;
+  font-size:1.05rem;
+}
+.ns-group-header small{
+  font-weight:400;
+  font-size:.85rem;
+  color:var(--text-light);
+}
+.ns-group .apps-list{margin-top:.2rem;} /* reuse grid inside group */
+
+/* ────────────────────────────────────────────────────────────────
+   Info button on app cards
+   ────────────────────────────────────────────────────────────── */
 .info-btn{
   margin-left:.4rem;
 

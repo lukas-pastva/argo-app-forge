@@ -2,6 +2,8 @@
     ───────────────────────────────────────────────────────────────
     • buildZip() now preserves YAML indentation when uncommenting
       oauth2 blocks: only the “# ” marker is removed.
+    • listApps() now returns *namespace* (and project) info so the
+      front‑end can group apps visually by namespace in the wizard.
 */
 
 import fs       from "fs/promises";
@@ -106,21 +108,30 @@ async function appFiles(root){
   return f;
 }
 
-/* ── 1)  Flatten Applications with meta ─────────────────────── */
+/* ── 1)  Flatten Applications with meta + namespace ─────────────────────── */
 export async function listApps(){
   const root  = await ensureRepo();
   const files = await appFiles(root);
-  const map   = new Map();                                  // name → meta
+
+  /*  We keep the *first* occurrence of each app name (same as before),
+      but now also remember its namespace (destinationNamespace | namespace)
+      and project (if present on the appProject object).
+      Front‑end groups by .namespace.                                             */
+  const map = new Map();  // name → { namespace, project, ...meta }
 
   for (const file of files){
     const doc = yaml.load(await fs.readFile(file,"utf8")) || {};
-    for (const proj of doc.appProjects||[])
+    for (const proj of doc.appProjects||[]){
+      const projectName = proj.name || proj.project || "";   // flexible
       for (const app of proj.applications||[]){
-        if (map.has(app.name)) continue;                    // de-dupe by name
-        if (app.path) map.set(app.name, await chartMeta(root, app.path));
-        else          map.set(app.name, {});                // remote chart
+        if (map.has(app.name)) continue;                     // de-dupe by name
+        const ns = app.destinationNamespace || app.namespace || "default";
+        const meta = app.path ? await chartMeta(root, app.path) : {};
+        map.set(app.name, { namespace: ns, project: projectName, ...meta });
       }
+    }
   }
+
   return [...map.entries()].map(([name,meta]) => ({ name, ...meta }));
 }
 
