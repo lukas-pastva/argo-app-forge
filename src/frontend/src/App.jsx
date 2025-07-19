@@ -48,7 +48,7 @@ const oneLiner = (name, body) => {
     .join("\n");
 };
 
-/* one‑liner + secrets (NEW: selectedApps export) --------------------------- */
+/* one‑liner + secrets (UPDATED – handles S‑3) ------------------------------ */
 const oneLinerSecrets = (
   name,
   body,
@@ -57,7 +57,8 @@ const oneLinerSecrets = (
   gitRepoUrl,
   installRancher = false,
   oauth2Secrets = {},
-  selectedApps = []          // ← NEW
+  selectedApps = [],
+  s3 = { id: "", key: "", url: "" }          // ← NEW param
 ) => {
   const lines = [
     `export GIT_REPO_URL="${gitRepoUrl}"`,
@@ -67,7 +68,7 @@ const oneLinerSecrets = (
     `export RANCHER_PASS="${priv.rancher}"`,
     `export GRAFANA_PASS="${priv.grafana}"`,
     `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
-    `export SELECTED_APPS="${selectedApps.join(" ")}"`,   // ← NEW
+    `export SELECTED_APPS="${selectedApps.join(" ")}"`,
   ];
   if (installRancher) lines.push(`export INSTALL_RANCHER="true"`);
 
@@ -87,8 +88,11 @@ const oneLinerSecrets = (
     }
   }
 
-  /* S‑3 */
-  if (s3Required) {
+  /* S‑3 bundle — only if any of loki / thanos / tempo are selected -------- */
+  const needsS3 = selectedApps.some(a =>
+    ["loki", "thanos", "tempo"].includes(a.toLowerCase())
+  );
+  if (needsS3) {
     lines.push(
       `export S3_ACCESS_KEY_ID="${s3.id}"`,
       `export S3_SECRET_ACCESS_KEY="${s3.key}"`,
@@ -190,7 +194,7 @@ export default function App() {
   /* state --------------------------------------------------- */
   const [domain, setDomain]   = useState("");
   const [repo, setRepo]       = useState("");
-  const [apps, setApps]       = useState([]);  // ← backend now includes {namespace}
+  const [apps, setApps]       = useState([]);  // backend includes {namespace}
   const [sel, setSel]         = useState(new Set());
   const [open, setOpen]       = useState(new Set());
 
@@ -275,14 +279,12 @@ export default function App() {
 
     if (!allowed) return;
     if (step < steps.length - 1) setStep(step + 1);
-  }, [step, domainOK, repoOK, appsChosen, oauth2ClientMiss]);
+  }, [step, domainOK, repoOK, appsChosen, oauth2ClientMiss, s3Missing]);
 
   useEffect(() => {
     function onKey(e) {
       if (e.key !== "Enter") return;
-      /* ignore if a modal is open (AppDetails, preview dialogs, etc.) */
       if (document.querySelector(".modal-overlay")) return;
-      /* ignore multi-line editors (Monaco & textareas) */
       const el = document.activeElement;
       if (
         el &&
@@ -291,7 +293,6 @@ export default function App() {
       ) {
         return;
       }
-      /* prevent form submission side-effects */
       e.preventDefault();
       advanceIfAllowed();
     }
@@ -861,7 +862,8 @@ export default function App() {
                               repo.trim(),
                               installRancher,
                               oauth2Secrets,
-                              [...sel]
+                              [...sel],
+                              s3
                             );
                           }}
                           onCopied={() => toast("Copied one-liner + secrets!") }
