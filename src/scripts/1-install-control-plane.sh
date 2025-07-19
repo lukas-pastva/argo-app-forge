@@ -14,14 +14,12 @@ set -euo pipefail
 #   **argo‑app‑forge**, ensure namespace **argo‑workflows** and create/update
 #   secret **git-ssh-key** with the private Git key (back‑compat behaviour).
 # • If *any* selected app name starts with **event-** (e.g. event-processor),
-#   ensure namespace **argo‑workflows** and create/update secret **event**
-#   containing:
-#       ARGOCD_PASSWORD – the (plain‑text) Argo CD admin password
-#       ARGOCD_USERNAME – always "admin"
-#       GIT_SSH_KEY     – the SSH *private* key used for the Git repo
-#       GITOPS_REPO     – the GitOps repo URL from Step 3
-#       GIT_EMAIL       – always "user@argo-init.com"
-#       GIT_USER        – always "argo-init"
+#   ensure namespace **argo‑workflows** and create/update secret **event**.
+# • **NEW:** When the chosen applications include **kube‑prometheus‑stack**
+#   (which bundles Grafana), create namespace **monitoring** and seed a
+#   **grafana‑admin‑secret** containing:
+#       admin-user     = "admin"   (constant)
+#       admin-password = randomly‑generated (or $GRAFANA_PASS if provided)
 #
 # Environment variables you can pre‑seed
 # ───────────────────────────────────────
@@ -32,6 +30,9 @@ set -euo pipefail
 #   RANCHER_PASS        – desired Rancher admin password
 #   INSTALL_RANCHER     – "true" → also install Rancher & bootstrap password
 #   SELECTED_APPS       – space‑separated list of app names chosen in Step 3
+#   GRAFANA_PASS        – Grafana admin password (optional; if unset and the
+#                         app list contains kube‑prometheus‑stack, a random
+#                         one is generated automatically)
 #
 # OAuth2 secrets
 # ──────────────
@@ -64,7 +65,8 @@ GIT_REPO_URL="${GIT_REPO_URL:-}"
 SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}"
 ARGOCD_PASS="${ARGOCD_PASS:-}"
 RANCHER_PASS="${RANCHER_PASS:-}"
-SELECTED_APPS="${SELECTED_APPS:-}"      # ← list from Step 3 (space‑sep)
+GRAFANA_PASS="${GRAFANA_PASS:-}"
+SELECTED_APPS="${SELECTED_APPS:-}"
 
 [[ -z "$TOKEN"        ]] && read -s -p "Enter RKE2 join token                 : " TOKEN && echo
 [[ -z "$GIT_REPO_URL" ]] && read    -p "Enter Git repo SSH URL              : " GIT_REPO_URL
@@ -174,11 +176,6 @@ EOF
 ###############################################################################
 # Argo CD installation
 ###############################################################################
-ARGOCD_PASS="${ARGOCD_PASS:-}"
-if [[ -z "$ARGOCD_PASS" ]]; then
-  read -s -p "Enter desired Argo CD admin password: " ARGOCD_PASS && echo
-fi
-
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 helm upgrade --install argocd argo/argo-cd \
@@ -261,10 +258,8 @@ if [[ "${INSTALL_RANCHER:-false}" == "true" ]]; then
 fi
 
 ###############################################################################
-# NEW – Prepare argo‑workflows if needed
-#      (helm‑toggler *or* app‑forge *or* any event-* app selected)
+# Prepare argo‑workflows if needed
 ###############################################################################
-# detect if any selected app starts with "event-"
 has_event_app=false
 if [[ -n "$SELECTED_APPS" ]]; then
   for _app in $SELECTED_APPS; do
@@ -294,7 +289,6 @@ stringData:
 $(echo "$KEY_STR" | sed 's/^/    /')
 EOF
 
-  # event secret only when an event-* app was selected
   if [[ "$has_event_app" == "true" ]]; then
     echo "↻  Creating/Updating 'event' secret in argo-workflows…"
     cat <<EOF | kubectl apply -f -
@@ -316,6 +310,35 @@ EOF
   fi
 
   echo "✔  argo-workflows namespace & supporting secrets ready."
+fi
+
+###############################################################################
+# NEW – Grafana admin secret for kube‑prometheus‑stack
+###############################################################################
+if [[ " ${SELECTED_APPS} " =~ [[:space:]]kube-prometheus-stack[[:space:]] ]]; then
+  echo "↻  Preparing Grafana admin credentials…"
+
+  # generate password if not provided
+  if [[ -z "$GRAFANA_PASS" ]]; then
+    if command -v openssl >/dev/null; then
+      GRAFANA_PASS="$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10)"
+    else
+      # fallback – uuid stripped to 10 chars
+      GRAFANA_PASS="$(uuidgen | tr -dc 'A-Za-z0-9' | head -c10)"
+    fi
+    echo "    Generated Grafana admin password: ${GRAFANA_PASS}"
+  fi
+
+  # ensure namespace
+  kubectl get ns monitoring >/dev/null 2>&1 || kubectl create ns monitoring
+
+  # create / update secret
+  kubectl -n monitoring create secret generic grafana-admin-secret \
+    --from-literal=admin-user="admin" \
+    --from-literal=admin-password="${GRAFANA_PASS}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  echo "✔  grafana-admin-secret applied in namespace 'monitoring'."
 fi
 
 ###############################################################################
@@ -351,7 +374,6 @@ fi
 
 ###############################################################################
 # Force Argo CD to notice everything we just created
-# (annotation = most reliable; replaces old kubectl-proxy+curl logic)
 ###############################################################################
 echo
 echo "⏳ Waiting 10s before forcing Argo CD refresh…"

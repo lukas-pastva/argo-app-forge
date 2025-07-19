@@ -65,6 +65,7 @@ const oneLinerSecrets = (
     `export ARGOCD_PASS="${priv.argocd}"`,
     `export KEYCLOAK_PASS="${priv.keycloak}"`,
     `export RANCHER_PASS="${priv.rancher}"`,
+    `export GRAFANA_PASS="${priv.grafana}"`,
     `export SSH_PRIVATE_KEY='${priv.ssh.replace(/\n/g, "\\n")}'`,
     `export SELECTED_APPS="${selectedApps.join(" ")}"`,   // ← NEW
   ];
@@ -84,6 +85,15 @@ const oneLinerSecrets = (
         `export ${env}_REDIS_PASSWORD="${s.redisPassword}"`
       );
     }
+  }
+
+  /* S‑3 */
+  if (s3Required) {
+    lines.push(
+      `export S3_ACCESS_KEY_ID="${s3.id}"`,
+      `export S3_SECRET_ACCESS_KEY="${s3.key}"`,
+      `export S3_ENDPOINT="${s3.url}"`
+    );
   }
 
   /* embed script, wipe history, done ------------------------------------- */
@@ -188,8 +198,11 @@ export default function App() {
   const [token, setToken]     = useState("");
   const [pwds, setPwds]       = useState(null);
 
-  /* NEW – oauth2 secret bundle */
   const [oauth2Secrets, setOauth2Secrets] = useState({});
+
+  /* NEW – S‑3 block */
+  const emptyS3   = { id:"", key:"", url:"" };
+  const [s3, setS3] = useState(emptyS3);
 
   const [scripts, setScripts] = useState([]);
 
@@ -233,6 +246,12 @@ export default function App() {
   const appsChosen = sel.size > 0;
   const canZip     = domainOK && repoOK && appsChosen;
 
+  /* S‑3 credentials required? */
+  const s3Required   = [...sel].some(n =>
+                       ["loki","thanos","tempo"].includes(n.toLowerCase()));
+  const s3Missing    = s3Required &&
+                       (!s3.id.trim() || !s3.key.trim() || !s3.url.trim());
+
   /* NEW – oauth2 validation */
   const oauth2Apps         = [...sel].filter(isOauth2);
   const oauth2ClientMiss   = oauth2Apps.some(
@@ -251,7 +270,7 @@ export default function App() {
       (step === 2) ? repoOK   :
       (step === 3) ? appsChosen :
       (step === 4) ? true :
-      (step === 5) ? !oauth2ClientMiss :
+      (step === 5) ? (!oauth2ClientMiss && !s3Missing) :
       /* steps 6-8 have no extra validation */ true;
 
     if (!allowed) return;
@@ -298,8 +317,12 @@ export default function App() {
       argocd: genPass(),
       keycloak: genPass(),
       rancher: genPass(),
+      grafana : genPass(),
       ssh: "",
     });
+
+    /* wipe any previous S‑3 creds when regenerating everything */
+    setS3(emptyS3);
 
     /* NEW – oauth2 secrets generation */
     const newOauth2 = makeOauth2Secrets(oauth2Apps);
@@ -648,6 +671,13 @@ export default function App() {
                       onCopied={() => toast("Copied!")}
                     />
                   </li>
+                  <li>
+                    Grafana:&nbsp;{pwds.grafana}&nbsp;
+                    <CopyBtn
+                      text={pwds.grafana}
+                      onCopied={() => toast("Copied!")}
+                    />
+                  </li>
                 </ul>
 
                 {/* NEW – oauth2 apps secrets ------------------------------- */}
@@ -709,10 +739,43 @@ export default function App() {
                   </>
                 )}
 
+                {/* NEW – S‑3 credentials for Loki / Thanos / Tempo */}
+                {s3Required && (
+                  <>
+                    <h3 style={{ marginTop: "2rem" }}>
+                      Object‑storage credentials
+                    </h3>
+                    <input
+                      className="wizard-input"
+                      placeholder="S3_ACCESS_KEY_ID"
+                      value={s3.id}
+                      onChange={e => setS3({ ...s3, id: e.target.value })}
+                    />
+                    <input
+                      className="wizard-input"
+                      placeholder="S3_SECRET_ACCESS_KEY"
+                      type="password"
+                      value={s3.key}
+                      onChange={e => setS3({ ...s3, key: e.target.value })}
+                    />
+                    <input
+                      className="wizard-input"
+                      placeholder="S3_ENDPOINT  (https://…)"
+                      value={s3.url}
+                      onChange={e => setS3({ ...s3, url: e.target.value })}
+                    />
+                    {s3Missing && (
+                      <p className="error">
+                        Please fill in all three S‑3 fields.
+                      </p>
+                    )}
+                  </>
+                )}
+
                 <button className="btn-secondary" onClick={regenAll}>
                   Regenerate all secrets
                 </button>
-                <Nav next={!oauth2ClientMiss} />
+                <Nav next={!oauth2ClientMiss && !s3Missing} />
               </>
             )}
           </>
@@ -873,7 +936,16 @@ export default function App() {
                     />
                   </td>
                 </tr>
-
+                <tr>
+                 <th>Grafana password</th>
+                  <td>{pwds?.grafana || "—"}</td>
+                  <td>
+                    <CopyBtn
+                      text={pwds?.grafana || ""}
+                      onCopied={() => toast("Copied!")}
+                    />
+                  </td>
+                </tr>
                 <tr>
                   <th>SSH public key</th>
                   <td>
@@ -938,6 +1010,30 @@ export default function App() {
                     </tr>
                   ));
                 })}
+
+                {s3Required && (
+                  <>
+                    <tr>
+                      <th>S3_ACCESS_KEY_ID</th>
+                      <td>{s3.id}</td>
+                      <td><CopyBtn text={s3.id}  className="tiny-btn"
+                                   onCopied={()=>toast("Copied!")}/></td>
+                    </tr>
+                    <tr>
+                      <th>S3_SECRET_ACCESS_KEY</th>
+                      <td>{s3.key ? "••••••" : "—"}</td>
+                      <td><CopyBtn text={s3.key} className="tiny-btn"
+                                   onCopied={()=>toast("Copied!")}/></td>
+                    </tr>
+                    <tr>
+                      <th>S3_ENDPOINT</th>
+                      <td>{s3.url}</td>
+                      <td><CopyBtn text={s3.url} className="tiny-btn"
+                                   onCopied={()=>toast("Copied!")}/></td>
+                    </tr>
+                  </>
+                )}
+
               </tbody>
             </table>
             <button
