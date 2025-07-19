@@ -5,6 +5,7 @@ import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
 
 /* ── regex & helpers ───────────────────────────────────────── */
+const NAME_RE   = /^[a-z0-9-]{2,}$/i;                             // NEW
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
@@ -48,7 +49,7 @@ const oneLiner = (name, body) => {
     .join("\n");
 };
 
-/* one‑liner + secrets (UPDATED – handles S‑3) ------------------------------ */
+/* one‑liner + secrets (UPDATED – bucketName param) ------------------------- */
 const oneLinerSecrets = (
   name,
   body,
@@ -58,7 +59,8 @@ const oneLinerSecrets = (
   installRancher = false,
   oauth2Secrets = {},
   selectedApps = [],
-  s3 = { id: "", key: "", url: "" }          // ← NEW param
+  s3 = { id: "", key: "", url: "" },
+  bucketName = ""                                 // ← NEW
 ) => {
   const lines = [
     `export GIT_REPO_URL="${gitRepoUrl}"`,
@@ -88,7 +90,7 @@ const oneLinerSecrets = (
     }
   }
 
-  /* S‑3 bundle — only if any of loki / thanos / tempo are selected -------- */
+  /* S‑3 bundle — only if Loki / Thanos / Tempo selected ------------------- */
   const needsS3 = selectedApps.some(a =>
     ["loki", "thanos", "tempo"].includes(a.toLowerCase())
   );
@@ -98,6 +100,7 @@ const oneLinerSecrets = (
       `export S3_SECRET_ACCESS_KEY="${s3.key}"`,
       `export S3_ENDPOINT="${s3.url}"`
     );
+    if (bucketName) lines.push(`export S3_BUCKET="${bucketName}"`); // NEW
   }
 
   /* embed script, wipe history, done ------------------------------------- */
@@ -175,11 +178,10 @@ async function copyText(txt) {
   }
 }
 
-/* ── steps meta ───────────────────────────────────────────── */
+/* ── steps meta (UPDATED) ─────────────────────────────────── */
 const steps = [
   { label: "Welcome",    desc: "Tiny tour of the whole flow." },
-  { label: "Domain",     desc: "Domain injected into manifests." },
-  { label: "Repo",       desc: "SSH URL of your Git repo." },
+  { label: "Details",    desc: "Name, main domain & Git repo." },
   { label: "Apps",       desc: "Pick the Helm apps you need." },
   { label: "ZIP + Repo", desc: "Download ZIP, push to repo." },
   { label: "Secrets",    desc: "SSH keys, token & admin passwords." },
@@ -192,8 +194,10 @@ const steps = [
 /* ─────────────────────────────────────────────────────────── */
 export default function App() {
   /* state --------------------------------------------------- */
-  const [domain, setDomain]   = useState("");
-  const [repo, setRepo]       = useState("");
+  const [proj,   setProj]      = useState("");  // ← NEW Name
+  const [domain, setDomain]    = useState("");
+  const [repo,   setRepo]      = useState("");
+
   const [apps, setApps]       = useState([]);  // backend includes {namespace}
   const [sel, setSel]         = useState(new Set());
   const [open, setOpen]       = useState(new Set());
@@ -229,9 +233,9 @@ export default function App() {
       .then(setApps);
   }, []);
 
-  /* fetch scripts when entering step 8 ---------------------- */
+  /* fetch scripts when entering step 7 ---------------------- */
   useEffect(() => {
-    if (step !== 8 || scripts.length || busyScp) return;
+    if (step !== 7 || scripts.length || busyScp) return;
     setBusyScp(true);
     fetch("/api/scripts")
       .then((r) => r.json())
@@ -239,12 +243,13 @@ export default function App() {
       .finally(() => setBusyScp(false));
   }, [step, scripts.length, busyScp]);
 
-  /* 🔄 generate secrets when first landing on Step 5 --------- */
+  /* 🔄 generate secrets when first landing on Step 4 --------- */
   useEffect(() => {
-    if (step === 5 && !keys) regenAll();
+    if (step === 4 && !keys) regenAll();
   }, [step, keys]);
 
   /* derived ------------------------------------------------- */
+  const nameOK     = NAME_RE.test(proj.trim());
   const domainOK   = DOMAIN_RE.test(domain.trim());
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size > 0;
@@ -270,16 +275,15 @@ export default function App() {
   const advanceIfAllowed = useCallback(() => {
     const allowed =
       (step === 0) ? true :
-      (step === 1) ? domainOK :
-      (step === 2) ? repoOK   :
-      (step === 3) ? appsChosen :
-      (step === 4) ? true :
-      (step === 5) ? (!oauth2ClientMiss && !s3Missing) :
-      /* steps 6-8 have no extra validation */ true;
+      (step === 1) ? (nameOK && domainOK && repoOK) :
+      (step === 2) ? appsChosen :
+      (step === 3) ? true :
+      (step === 4) ? (!oauth2ClientMiss && !s3Missing) :
+      /* steps 5‑7 have no extra validation */ true;
 
     if (!allowed) return;
     if (step < steps.length - 1) setStep(step + 1);
-  }, [step, domainOK, repoOK, appsChosen, oauth2ClientMiss, s3Missing]);
+  }, [step, nameOK, domainOK, repoOK, appsChosen, oauth2ClientMiss, s3Missing]);
 
   useEffect(() => {
     function onKey(e) {
@@ -302,7 +306,7 @@ export default function App() {
 
   /* auto-download ZIP -------------------------------------- */
   useEffect(() => {
-    if (step === 4 && canZip) buildZip();
+    if (step === 3 && canZip) buildZip();
   }, [step, canZip]);
 
   /* regenerate everything ---------------------------------- */
@@ -396,8 +400,7 @@ export default function App() {
   const Intro = ({ i }) => <p className="intro">{steps[i].desc}</p>;
 
   /* ──────────────────────────────────────────────────────────
-     RENDER HELPERS – App card + grouped layout (Step 3)
-     Backend now supplies `a.namespace` for each app.
+     RENDER HELPERS – App card + grouped layout (Step 2)
   ────────────────────────────────────────────────────────── */
 
   function AppCard({ a }) {
@@ -526,11 +529,21 @@ export default function App() {
           </>
         );
 
-      /* 1 ─ Domain */ case 1:
+      /* 1 ─ Details (Name + Domain + Repo) */ case 1:
         return (
           <>
-            <h2>Step 1 – Main domain</h2>
+            <h2>Step 1 – Project details</h2>
             <Intro i={1} />
+            <label>Name (bucket)</label>
+            <input
+              className="wizard-input"
+              value={proj}
+              onChange={(e) => setProj(e.target.value.toLowerCase())}
+              placeholder="myproject"
+            />
+            {!nameOK && <p className="error">Lower‑case letters, digits & “‑”.</p>}
+
+            <label style={{ marginTop: ".8rem" }}>Main domain</label>
             <input
               className="wizard-input"
               value={domain}
@@ -538,9 +551,19 @@ export default function App() {
               placeholder="example.com"
             />
             {!domainOK && <p className="error">Enter a valid domain.</p>}
+
+            <label style={{ marginTop: ".8rem" }}>Git repo (SSH)</label>
+            <input
+              className="wizard-input"
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              placeholder="git@host:group/repo.git"
+            />
+            {!repoOK && <p className="error">Enter a valid SSH repository URL.</p>}
+
             <button
               className="btn"
-              disabled={!domainOK}
+              disabled={!(nameOK && domainOK && repoOK)}
               onClick={() => setStep(2)}
             >
               Next →
@@ -548,29 +571,11 @@ export default function App() {
           </>
         );
 
-      /* 2 ─ Repo */ case 2:
+      /* 2 ─ Apps */ case 2:
         return (
           <>
-            <h2>Step 2 – Git repository (SSH)</h2>
+            <h2>Step 2 – Choose applications</h2>
             <Intro i={2} />
-            <input
-              className="wizard-input"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              placeholder="git@host:group/repo.git"
-            />
-            {!repoOK && (
-              <p className="error">Enter a valid SSH repository URL.</p>
-            )}
-            <Nav next={repoOK} />
-          </>
-        );
-
-      /* 3 ─ Apps (GROUPED BY NAMESPACE) */ case 3:
-        return (
-          <>
-            <h2>Step 3 – Choose applications</h2>
-            <Intro i={3} />
             <div className="apps-actions">
               <button className="btn-secondary" onClick={selectAll}>
                 Select all
@@ -587,13 +592,13 @@ export default function App() {
           </>
         );
 
-      /* 4 ─ ZIP + Repo */ case 4:
+      /* 3 ─ ZIP + Repo */ case 3:
         return (
           <>
-            <h2>Step 4 – Download ZIP &amp; push</h2>
-            <Intro i={4} />
+            <h2>Step 3 – Download ZIP &amp; push</h2>
+            <Intro i={3} />
             <p>
-              1.&nbsp;<strong>Download ZIP</strong> (auto-starts).<br />
+              1.&nbsp;<strong>Download ZIP</strong> (auto‑starts).<br />
               2.&nbsp;Create / empty the repository&nbsp;
               <code>{repo || "(repo)"}</code> and push the extracted files
               to the <code>main</code> branch.
@@ -609,11 +614,11 @@ export default function App() {
           </>
         );
 
-      /* 5 ─ Secrets (UPDATED) */ case 5:
+      /* 4 ─ Secrets */ case 4:
         return (
           <>
-            <h2>Step 5 – Secrets</h2>
-            <Intro i={5} />
+            <h2>Step 4 – Secrets</h2>
+            <Intro i={4} />
             {!keys || !pwds || busyKey ? (
               <Spinner size={32} />
             ) : (
@@ -772,7 +777,6 @@ export default function App() {
                     )}
                   </>
                 )}
-
                 <button className="btn-secondary" onClick={regenAll}>
                   Regenerate all secrets
                 </button>
@@ -782,11 +786,12 @@ export default function App() {
           </>
         );
 
-      /* 6 ─ Deploy key */ case 6:
+      /* 5 ─ Deploy key */ case 5:
+        /* unchanged – omitted for brevity */
         return (
           <>
-            <h2>Step 6 – Deploy key</h2>
-            <Intro i={6} />
+            <h2>Step 5 – Deploy key</h2>
+            <Intro i={5} />
             <p>
               Add the SSH public key above as a deploy&nbsp;key
               (<em>read&nbsp;/ write</em>) in&nbsp;
@@ -803,11 +808,12 @@ export default function App() {
           </>
         );
 
-      /* 7 ─ SSH VMs */ case 7:
+      /* 6 ─ SSH VMs */ case 6:
+        /* unchanged – omitted for brevity */
         return (
           <>
-            <h2>Step 7 – SSH onto the VMs</h2>
-            <Intro i={7} />
+            <h2>Step 6 – SSH onto the VMs</h2>
+            <Intro i={6} />
             <p>
               Log into <strong>every</strong> VM that should join the RKE2
               cluster and make sure you run the downloaded scripts (next
@@ -817,11 +823,11 @@ export default function App() {
           </>
         );
 
-      /* 8 ─ Scripts */ case 8:
+      /* 7 ─ Scripts (UPDATED one-liner call) */ case 7:
         return (
           <>
-            <h2>Step 8 – Helper scripts</h2>
-            <Intro i={8} />
+            <h2>Step 7 – Helper scripts</h2>
+            <Intro i={7} />
             {busyScp ? (
               <Spinner size={28} />
             ) : (
@@ -863,7 +869,8 @@ export default function App() {
                               installRancher,
                               oauth2Secrets,
                               [...sel],
-                              s3
+                              s3,
+                              proj.trim()                      // ← NEW param
                             );
                           }}
                           onCopied={() => toast("Copied one-liner + secrets!") }
@@ -880,11 +887,12 @@ export default function App() {
           </>
         );
 
-      /* 9 ─ Overview (UPDATED) */ case 9:
+      /* 8 ─ Overview */ case 8:
+        /* unchanged except step index */
         return (
           <>
-            <h2>Step 9 – Overview 🎉</h2>
-            <Intro i={9} />
+            <h2>Step 8 – Overview 🎉</h2>
+            <Intro i={8} />
             {/* dark-hover fix */}
             <style>{`
               [data-theme='dark'] .summary-table tr:hover{
