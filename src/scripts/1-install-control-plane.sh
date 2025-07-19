@@ -15,24 +15,31 @@ set -euo pipefail
 #   secret **git-ssh-key** with the private Git key (back‑compat behaviour).
 # • If *any* selected app name starts with **event-** (e.g. event-processor),
 #   ensure namespace **argo‑workflows** and create/update secret **event**.
-# • **NEW:** When the chosen applications include **kube‑prometheus‑stack**
+# • When the chosen applications include **kube‑prometheus‑stack**
 #   (which bundles Grafana), create namespace **monitoring** and seed a
-#   **grafana‑admin‑secret** containing:
-#       admin-user     = "admin"   (constant)
-#       admin-password = randomly‑generated (or $GRAFANA_PASS if provided)
+#   **grafana‑admin‑secret**.
+# • **NEW:** If the user selects **loki**, **thanos** or **tempo**, the script
+#   creates a **monitoring‑s3** secret populated from three environment
+#   variables (not auto‑generated):
+#       S3_ACCESS_KEY_ID
+#       S3_SECRET_ACCESS_KEY
+#       S3_ENDPOINT
 #
 # Environment variables you can pre‑seed
 # ───────────────────────────────────────
-#   RANCHER_TOKEN       – RKE2 cluster‑join token
-#   GIT_REPO_URL        – SSH URL of your Git repo (git@host:org/repo.git)
-#   SSH_PRIVATE_KEY     – private key that grants read‑write access to repo
-#   ARGOCD_PASS         – desired Argo CD *admin* password (plain text)
-#   RANCHER_PASS        – desired Rancher admin password
-#   INSTALL_RANCHER     – "true" → also install Rancher & bootstrap password
-#   SELECTED_APPS       – space‑separated list of app names chosen in Step 3
-#   GRAFANA_PASS        – Grafana admin password (optional; if unset and the
-#                         app list contains kube‑prometheus‑stack, a random
-#                         one is generated automatically)
+#   RANCHER_TOKEN        – RKE2 cluster‑join token
+#   GIT_REPO_URL         – SSH URL of your Git repo (git@host:org/repo.git)
+#   SSH_PRIVATE_KEY      – private key that grants read‑write access to repo
+#   ARGOCD_PASS          – desired Argo CD *admin* password (plain text)
+#   RANCHER_PASS         – desired Rancher admin password
+#   INSTALL_RANCHER      – "true" → also install Rancher & bootstrap password
+#   SELECTED_APPS        – space‑separated list of app names chosen in Step 3
+#   GRAFANA_PASS         – Grafana admin password (optional; if unset and the
+#                          app list contains kube‑prometheus‑stack, a random
+#                          one is generated automatically)
+#   S3_ACCESS_KEY_ID     – required when Loki / Thanos / Tempo selected
+#   S3_SECRET_ACCESS_KEY – required when Loki / Thanos / Tempo selected
+#   S3_ENDPOINT          – required when Loki / Thanos / Tempo selected
 #
 # OAuth2 secrets
 # ──────────────
@@ -68,6 +75,11 @@ RANCHER_PASS="${RANCHER_PASS:-}"
 GRAFANA_PASS="${GRAFANA_PASS:-}"
 SELECTED_APPS="${SELECTED_APPS:-}"
 
+# NEW – S‑3 credentials intake
+S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-}"
+S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-}"
+S3_ENDPOINT="${S3_ENDPOINT:-}"
+
 [[ -z "$TOKEN"        ]] && read -s -p "Enter RKE2 join token                 : " TOKEN && echo
 [[ -z "$GIT_REPO_URL" ]] && read    -p "Enter Git repo SSH URL              : " GIT_REPO_URL
 if [[ -z "$SSH_PRIVATE_KEY" ]]; then
@@ -75,6 +87,15 @@ if [[ -z "$SSH_PRIVATE_KEY" ]]; then
   SSH_PRIVATE_KEY="$(cat)"
 fi
 [[ -z "$ARGOCD_PASS"  ]] && read -s -p "Enter desired Argo CD admin password : " ARGOCD_PASS && echo
+
+# If any of loki / thanos / tempo selected, prompt for S‑3 creds
+if [[ " ${SELECTED_APPS} " =~ [[:space:]]loki[[:space:]]    ]] || \
+   [[ " ${SELECTED_APPS} " =~ [[:space:]]thanos[[:space:]]  ]] || \
+   [[ " ${SELECTED_APPS} " =~ [[:space:]]tempo[[:space:]]   ]]; then
+  [[ -z "$S3_ACCESS_KEY_ID"     ]] && read    -p "Enter S3_ACCESS_KEY_ID      : " S3_ACCESS_KEY_ID
+  [[ -z "$S3_SECRET_ACCESS_KEY" ]] && read -s -p "Enter S3_SECRET_ACCESS_KEY : " S3_SECRET_ACCESS_KEY && echo
+  [[ -z "$S3_ENDPOINT"          ]] && read    -p "Enter S3_ENDPOINT (https://): " S3_ENDPOINT
+fi
 
 ###############################################################################
 # Ensure *htpasswd* is available (apache2‑utils or httpd‑tools)
@@ -313,7 +334,7 @@ EOF
 fi
 
 ###############################################################################
-# NEW – Grafana admin secret for kube‑prometheus‑stack
+# Grafana admin secret for kube‑prometheus‑stack
 ###############################################################################
 if [[ " ${SELECTED_APPS} " =~ [[:space:]]kube-prometheus-stack[[:space:]] ]]; then
   echo "↻  Preparing Grafana admin credentials…"
@@ -323,7 +344,6 @@ if [[ " ${SELECTED_APPS} " =~ [[:space:]]kube-prometheus-stack[[:space:]] ]]; th
     if command -v openssl >/dev/null; then
       GRAFANA_PASS="$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10)"
     else
-      # fallback – uuid stripped to 10 chars
       GRAFANA_PASS="$(uuidgen | tr -dc 'A-Za-z0-9' | head -c10)"
     fi
     echo "    Generated Grafana admin password: ${GRAFANA_PASS}"
@@ -339,6 +359,24 @@ if [[ " ${SELECTED_APPS} " =~ [[:space:]]kube-prometheus-stack[[:space:]] ]]; th
     --dry-run=client -o yaml | kubectl apply -f -
 
   echo "✔  grafana-admin-secret applied in namespace 'monitoring'."
+fi
+
+###############################################################################
+# NEW – monitoring‑s3 secret for Loki / Thanos / Tempo
+###############################################################################
+if [[ " ${SELECTED_APPS} " =~ [[:space:]]loki[[:space:]]    ]] || \
+   [[ " ${SELECTED_APPS} " =~ [[:space:]]thanos[[:space:]]  ]] || \
+   [[ " ${SELECTED_APPS} " =~ [[:space:]]tempo[[:space:]]   ]]; then
+  echo "↻  Applying monitoring‑s3 secret…"
+  kubectl get ns monitoring >/dev/null 2>&1 || kubectl create ns monitoring
+
+  kubectl -n monitoring create secret generic monitoring-s3 \
+    --from-literal=S3_ACCESS_KEY_ID="$S3_ACCESS_KEY_ID" \
+    --from-literal=S3_SECRET_ACCESS_KEY="$S3_SECRET_ACCESS_KEY" \
+    --from-literal=S3_ENDPOINT="$S3_ENDPOINT" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  echo "✔ monitoring-s3 secret created/updated."
 fi
 
 ###############################################################################
