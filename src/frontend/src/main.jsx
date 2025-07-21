@@ -1,11 +1,12 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import { InitStateProvider } from "./state/initState.jsx";   // 👈 add this
 
 createRoot(document.getElementById("root")).render(
-<InitStateProvider>
-  <App />
-</InitStateProvider>
+  <InitStateProvider>
+    <App />
+  </InitStateProvider>
 );
 
 /* ── tell Monaco how to load its workers in Vite ──────────────────
@@ -36,3 +37,4 @@ self.MonacoEnvironment = {
     }
   },
 };
+
