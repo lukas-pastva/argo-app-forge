@@ -5,7 +5,7 @@ import {
   stepsMeta,
   StateProvider,
   useInitState,
-} from "./state/initState.js";
+} from "./state/initState.jsx";
 
 // lazy‑load every wizard step (one component == one file)
 const Step0Welcome  = lazy(() => import("./steps/Step0Welcome.jsx"));
