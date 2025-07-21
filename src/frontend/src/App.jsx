@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useState } from "react";
+import "./App.css";
 import Spinner from "./components/Spinner.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { stepsMeta, useInitState } from "./state/initState.jsx";
