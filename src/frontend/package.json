@@ -1,5 +1,5 @@
 {
-  "name": "argo-helm-toggler-frontend",
+  "name": "argo-init-frontend",
   "version": "1.0.1",
   "private": true,
   "type": "module",

@@ -243,7 +243,6 @@ for _app in $SELECTED_APPS; do
 done
 
 if [[  " ${SELECTED_APPS} " =~ [[:space:]]argo-helm-toggler[[:space:]]  ]] || \
-   [[  " ${SELECTED_APPS} " =~ [[:space:]]argo-app-forge[[:space:]]     ]] || \
    [[ "$has_event_app" == "true" ]]; then
   kubectl get ns argo-workflows >/dev/null 2>&1 || kubectl create ns argo-workflows
   cat <<EOF | kubectl apply -f -
@@ -310,6 +309,7 @@ stringData:
   S3_ACCESS_KEY_ID:      "${S3_ACCESS_KEY_ID}"
   S3_SECRET_ACCESS_KEY:  "${S3_SECRET_ACCESS_KEY}"
   S3_ENDPOINT:           "${S3_ENDPOINT}"
+  S3_BUCKET:             "${S3_BUCKET}"
   accessKeyID:           "${S3_ACCESS_KEY_ID}"
   secretAccessKey:       "${S3_SECRET_ACCESS_KEY}"
   endpoint:              "${S3_ENDPOINT}"

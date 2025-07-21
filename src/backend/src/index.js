@@ -29,7 +29,7 @@ app.post("/api/build", async (req, res) => {
   }
   try {
     const stream   = await buildZip(selected, repo, domain);
-    const fileStem = (domain || "appforge").replace(/[^a-z0-9.-]+/gi, "-");
+    const fileStem = (domain || "Argo Init").replace(/[^a-z0-9.-]+/gi, "-");
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename=${fileStem}.zip`);
     stream.pipe(res);
@@ -74,4 +74,4 @@ app.get("/scripts/:name", async (req, res) => {
   }
 });
 
-app.listen(cfg.port, () => console.log(`✔︎ AppForge backend @${cfg.port}`));
+app.listen(cfg.port, () => console.log(`✔︎ Argo Init backend @${cfg.port}`));

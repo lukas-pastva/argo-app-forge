@@ -5,7 +5,7 @@ import ThemeToggle from "./components/ThemeToggle.jsx";
 import "./App.css";
 
 /* ── regex & helpers ───────────────────────────────────────── */
-const NAME_RE   = /^[a-z0-9-]{2,}$/i;                             // NEW
+const NAME_RE   = /^[a-z0-9-]{2,}$/i;                             // bucket name
 const REPO_RE   = /^git@[^:]+:[A-Za-z0-9._/-]+\.git$/i;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const toastDur  = 2000;
@@ -98,9 +98,9 @@ const oneLinerSecrets = (
     lines.push(
       `export S3_ACCESS_KEY_ID="${s3.id}"`,
       `export S3_SECRET_ACCESS_KEY="${s3.key}"`,
-      `export S3_ENDPOINT="${s3.url}"`
+      `export S3_ENDPOINT="${s3.url}"`,
+      `export S3_BUCKET="${bucketName}"`
     );
-    if (bucketName) lines.push(`export S3_BUCKET="${bucketName}"`); // NEW
   }
 
   /* embed script, wipe history, done ------------------------------------- */
@@ -181,10 +181,10 @@ async function copyText(txt) {
 /* ── steps meta (UPDATED) ─────────────────────────────────── */
 const steps = [
   { label: "Welcome",    desc: "Tiny tour of the whole flow." },
-  { label: "Details",    desc: "Name, main domain & Git repo." },
+  { label: "Details",    desc: "Main domain & Git repo." },
   { label: "Apps",       desc: "Pick the Helm apps you need." },
   { label: "ZIP + Repo", desc: "Download ZIP, push to repo." },
-  { label: "Secrets",    desc: "SSH keys, token & admin passwords." },
+  { label: "Secrets",    desc: "SSH keys, tokens & passwords." },
   { label: "Deploy key", desc: "Add the SSH key to the repo." },
   { label: "SSH VMs",    desc: "Log into every RKE2 node." },
   { label: "Scripts",    desc: "Helper install scripts." },
@@ -194,9 +194,9 @@ const steps = [
 /* ─────────────────────────────────────────────────────────── */
 export default function App() {
   /* state --------------------------------------------------- */
-  const [proj,   setProj]      = useState("");  // ← NEW Name
-  const [domain, setDomain]    = useState("");
-  const [repo,   setRepo]      = useState("");
+  const [bucket, setBucket]  = useState("");  // ← NEW bucket name
+  const [domain, setDomain]  = useState("");
+  const [repo,   setRepo]    = useState("");
 
   const [apps, setApps]       = useState([]);  // backend includes {namespace}
   const [sel, setSel]         = useState(new Set());
@@ -249,7 +249,7 @@ export default function App() {
   }, [step, keys]);
 
   /* derived ------------------------------------------------- */
-  const nameOK     = NAME_RE.test(proj.trim());
+  const bucketOK   = NAME_RE.test(bucket.trim());
   const domainOK   = DOMAIN_RE.test(domain.trim());
   const repoOK     = REPO_RE.test(repo.trim());
   const appsChosen = sel.size > 0;
@@ -260,6 +260,7 @@ export default function App() {
                        ["loki","thanos","tempo"].includes(n.toLowerCase()));
   const s3Missing    = s3Required &&
                        (!s3.id.trim() || !s3.key.trim() || !s3.url.trim());
+  const bucketMissing = s3Required && !bucketOK;
 
   /* NEW – oauth2 validation */
   const oauth2Apps         = [...sel].filter(isOauth2);
@@ -275,15 +276,15 @@ export default function App() {
   const advanceIfAllowed = useCallback(() => {
     const allowed =
       (step === 0) ? true :
-      (step === 1) ? (nameOK && domainOK && repoOK) :
+      (step === 1) ? (domainOK && repoOK) :
       (step === 2) ? appsChosen :
       (step === 3) ? true :
-      (step === 4) ? (!oauth2ClientMiss && !s3Missing) :
+      (step === 4) ? (!oauth2ClientMiss && !s3Missing && !bucketMissing) :
       /* steps 5‑7 have no extra validation */ true;
 
     if (!allowed) return;
     if (step < steps.length - 1) setStep(step + 1);
-  }, [step, nameOK, domainOK, repoOK, appsChosen, oauth2ClientMiss, s3Missing]);
+  }, [step, domainOK, repoOK, appsChosen, oauth2ClientMiss, s3Missing, bucketMissing]);
 
   useEffect(() => {
     function onKey(e) {
@@ -351,7 +352,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement("a"), {
       href: url,
-      download: `${domain || "appforge"}.zip`,
+      download: `${domain || "argo-init"}.zip`,
     }).click();
     URL.revokeObjectURL(url);
     setBusyZip(false);
@@ -514,7 +515,7 @@ export default function App() {
       /* 0 ─ Welcome */ case 0:
         return (
           <>
-            <h2>Welcome to AppForge 🚀</h2>
+            <h2>Welcome to Argo Init 🚀</h2>
             <Intro i={0} />
             <ol style={{ margin: "1rem 0 1.5rem 1.2rem" }}>
               {steps.slice(1).map((s, i) => (
@@ -529,21 +530,13 @@ export default function App() {
           </>
         );
 
-      /* 1 ─ Details (Name + Domain + Repo) */ case 1:
+      /* 1 ─ Details (Domain + Repo) */ case 1:
         return (
           <>
             <h2>Step 1 – Project details</h2>
             <Intro i={1} />
-            <label>Name (bucket)</label>
-            <input
-              className="wizard-input"
-              value={proj}
-              onChange={(e) => setProj(e.target.value.toLowerCase())}
-              placeholder="myproject"
-            />
-            {!nameOK && <p className="error">Lower‑case letters, digits & “‑”.</p>}
 
-            <label style={{ marginTop: ".8rem" }}>Main domain</label>
+            <label>Main domain</label>
             <input
               className="wizard-input"
               value={domain}
@@ -563,7 +556,7 @@ export default function App() {
 
             <button
               className="btn"
-              disabled={!(nameOK && domainOK && repoOK)}
+              disabled={!(domainOK && repoOK)}
               onClick={() => setStep(2)}
             >
               Next →
@@ -654,37 +647,24 @@ export default function App() {
                   />
                 </div>
 
-                <label style={{ marginTop: "1rem" }}>Admin passwords</label>
-                <ul className="summary-list" style={{ marginTop: ".3rem" }}>
-                  <li>
-                    Argo CD:&nbsp;{pwds.argocd}&nbsp;
-                    <CopyBtn
-                      text={pwds.argocd}
-                      onCopied={() => toast("Copied!")}
-                    />
-                  </li>
-                  <li>
-                    Keycloak:&nbsp;{pwds.keycloak}&nbsp;
-                    <CopyBtn
-                      text={pwds.keycloak}
-                      onCopied={() => toast("Copied!")}
-                    />
-                  </li>
-                  <li>
-                    Rancher:&nbsp;{pwds.rancher}&nbsp;
-                    <CopyBtn
-                      text={pwds.rancher}
-                      onCopied={() => toast("Copied!")}
-                    />
-                  </li>
-                  <li>
-                    Grafana:&nbsp;{pwds.grafana}&nbsp;
-                    <CopyBtn
-                      text={pwds.grafana}
-                      onCopied={() => toast("Copied!")}
-                    />
-                  </li>
-                </ul>
+                <h3 style={{ marginTop: "1.4rem" }}>Admin passwords</h3>
+                <div style={{ display: "grid", gap: ".6rem", marginTop: ".6rem" }}>
+                  {["argocd","keycloak","rancher","grafana"].map(key => (
+                    <div key={key} style={{ display:"flex", alignItems:"center", gap:".6rem" }}>
+                      <label style={{ minWidth:"6rem", textTransform:"capitalize" }}>
+                        {key}:
+                      </label>
+                      <input
+                        className="wizard-input"
+                        type="text"
+                        value={pwds[key]}
+                        onChange={e=>setPwds({...pwds,[key]:e.target.value})}
+                        style={{ flex:1 }}
+                      />
+                      <CopyBtn text={pwds[key]} onCopied={()=>toast("Copied!")}/>
+                    </div>
+                  ))}
+                </div>
 
                 {/* NEW – oauth2 apps secrets ------------------------------- */}
                 {oauth2Apps.length > 0 && (
@@ -713,6 +693,7 @@ export default function App() {
                                 updateOauth2(name, "clientSecret", e.target.value)
                               }
                             />
+                            <label>Cookie secret</label>
                             <div className="key-wrap">
                               <pre className="key-block pub">
                                 {sec.cookieSecret}
@@ -723,6 +704,7 @@ export default function App() {
                                 onCopied={() => toast("Copied!")}
                               />
                             </div>
+                            <label>Redis password</label>
                             <div className="key-wrap">
                               <pre className="key-block pub">
                                 {sec.redisPassword}
@@ -766,13 +748,19 @@ export default function App() {
                     />
                     <input
                       className="wizard-input"
-                      placeholder="S3_ENDPOINT  (https://…)"
+                      placeholder="S3_ENDPOINT  (e.g. s3.us-west-1.amazonaws.com)"
                       value={s3.url}
                       onChange={e => setS3({ ...s3, url: e.target.value })}
                     />
-                    {s3Missing && (
+                    <input
+                      className="wizard-input"
+                      placeholder="S3_BUCKET  (bucket name)"
+                      value={bucket}
+                      onChange={e => setBucket(e.target.value.toLowerCase())}
+                    />
+                    {(s3Missing || bucketMissing) && (
                       <p className="error">
-                        Please fill in all three S‑3 fields.
+                        Please fill in all object‑storage fields.
                       </p>
                     )}
                   </>
@@ -780,36 +768,37 @@ export default function App() {
                 <button className="btn-secondary" onClick={regenAll}>
                   Regenerate all secrets
                 </button>
-                <Nav next={!oauth2ClientMiss && !s3Missing} />
+                <Nav next={!oauth2ClientMiss && !s3Missing && !bucketMissing} />
               </>
             )}
           </>
         );
 
       /* 5 ─ Deploy key */ case 5:
-        /* unchanged – omitted for brevity */
         return (
           <>
             <h2>Step 5 – Deploy key</h2>
             <Intro i={5} />
             <p>
-              Add the SSH public key above as a deploy&nbsp;key
+              Add the SSH public key below as a deploy&nbsp;key
               (<em>read&nbsp;/ write</em>) in&nbsp;
               <code>{repo || "(repo)"} </code>.
             </p>
             {keys && (
-              <CopyBtn
-                text={keys.publicKey}
-                className="action-btn key-copy"
-                onCopied={() => toast("Copied!")}
-              />
+              <div className="key-wrap" style={{ marginTop: ".8rem" }}>
+                <pre className="key-block pub">{keys.publicKey}</pre>
+                <CopyBtn
+                  text={keys.publicKey}
+                  className="action-btn key-copy"
+                  onCopied={() => toast("Copied!")}
+                />
+              </div>
             )}
             <Nav />
           </>
         );
 
       /* 6 ─ SSH VMs */ case 6:
-        /* unchanged – omitted for brevity */
         return (
           <>
             <h2>Step 6 – SSH onto the VMs</h2>
@@ -870,7 +859,7 @@ export default function App() {
                               oauth2Secrets,
                               [...sel],
                               s3,
-                              proj.trim()                      // ← NEW param
+                              bucket.trim()                      // ← NEW param
                             );
                           }}
                           onCopied={() => toast("Copied one-liner + secrets!") }
@@ -888,7 +877,6 @@ export default function App() {
         );
 
       /* 8 ─ Overview */ case 8:
-        /* unchanged except step index */
         return (
           <>
             <h2>Step 8 – Overview 🎉</h2>
@@ -1039,6 +1027,12 @@ export default function App() {
                       <th>S3_ENDPOINT</th>
                       <td>{s3.url}</td>
                       <td><CopyBtn text={s3.url} className="tiny-btn"
+                                   onCopied={()=>toast("Copied!")}/></td>
+                    </tr>
+                    <tr>
+                      <th>S3_BUCKET</th>
+                      <td>{bucket}</td>
+                      <td><CopyBtn text={bucket} className="tiny-btn"
                                    onCopied={()=>toast("Copied!")}/></td>
                     </tr>
                   </>
