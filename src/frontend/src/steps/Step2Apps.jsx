@@ -1,45 +1,44 @@
 import React, { useEffect, useState, useMemo } from "react";
-import Spinner     from "../components/Spinner.jsx";
-import AppDetails  from "../components/AppDetails.jsx";
+import Spinner  from "../components/Spinner.jsx";
+import AppInfo  from "../components/AppInfo.jsx";      // 👈 new lightweight modal
 import { useInitState } from "../state/initState.jsx";
 
-/* helper – groups flat [{name,namespace,…}] into ns → [apps] */
-const byNs = list =>
-  list.reduce((m, a) => { (m[a.namespace] ??= []).push(a); return m; }, {});
+/* helper – group [{ name, namespace, … }] into ns → [apps] */
+const groupByNs = arr =>
+  arr.reduce((m, a) => { (m[a.namespace] ??= []).push(a); return m; }, {});
 
 export default function Step2Apps({ step, setStep }) {
-  const ctx               = useInitState();
-  const [busy,    setBusy]   = useState(true);
-  const [inspect, setInspect]= useState(null);     // ← currently opened modal
+  const ctx                = useInitState();
+  const [busy, setBusy]    = useState(true);
+  const [info, setInfo]    = useState(null);    // ← chart‑info currently open
 
-  /* fetch once -------------------------------------------------------- */
+  /* fetch once ----------------------------------------------------- */
   useEffect(() => {
     (async () => {
       setBusy(true);
       try {
-        /* each item: { name, namespace, icon, desc, readme, __file }  */
-        const list = await fetch("/api/apps").then(r => r.json());
+        const apps = await fetch("/api/apps").then(r => r.json());
         ctx.set({
-          apps : list,
-          sel  : new Set(ctx.sel),    // keep any previous selection
-          open : new Set(ctx.open),
+          apps,
+          sel : new Set(ctx.sel),    // keep any prior choices
+          open: new Set(ctx.open),
         });
       } finally { setBusy(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* derived – grouped by namespace ----------------------------------- */
-  const grouped = useMemo(() => byNs(ctx.apps), [ctx.apps]);
+  /* derived -------------------------------------------------------- */
+  const grouped     = useMemo(() => groupByNs(ctx.apps), [ctx.apps]);
   const allSelected = ctx.apps.length && ctx.sel.size === ctx.apps.length;
 
-  /* selection helpers ------------------------------------------------ */
+  /* selection helpers --------------------------------------------- */
   const toggleApp = name => {
     const next = new Set(ctx.sel);
     next.has(name) ? next.delete(name) : next.add(name);
     ctx.set({ sel: next });
   };
-  const toggleNs  = ns => {
+  const toggleNs = ns => {
     const nsApps = grouped[ns].map(a => a.name);
     const every  = nsApps.every(n => ctx.sel.has(n));
     const next   = new Set(ctx.sel);
@@ -47,7 +46,7 @@ export default function Step2Apps({ step, setStep }) {
     ctx.set({ sel: next });
   };
 
-  /* ------------------------------------------------------------------ */
+  /* --------------------------------------------------------------- */
   if (busy) {
     return (
       <div style={{ textAlign: "center", padding: "2rem" }}>
@@ -60,27 +59,35 @@ export default function Step2Apps({ step, setStep }) {
     <>
       <h2>Step 2 – Pick Applications</h2>
       <p className="intro">
-        Tick the Helm apps you want. Everything else will be stripped from the
-        repository before the ZIP is built. Click ℹ️ for chart details.
+        Tick the Helm apps you need. Click ℹ️ to see chart description,
+        maintainers and a README snippet.
       </p>
 
-      {/* mass actions -------------------------------------------------- */}
+      {/* mass‑actions ------------------------------------------------- */}
       <div className="apps-actions">
         <button
           className="btn-secondary"
           onClick={() =>
             ctx.set({
-              sel: new Set(allSelected ? [] : ctx.apps.map(a => a.name)),
+              sel: new Set(
+                allSelected ? [] : ctx.apps.map(a => a.name),
+              ),
             })}
         >
           {allSelected ? "Deselect all" : "Select all"}
         </button>
-        <span style={{ alignSelf: "center", fontSize: ".9rem", color: "var(--text-light)" }}>
+        <span
+          style={{
+            alignSelf: "center",
+            fontSize: ".9rem",
+            color: "var(--text-light)",
+          }}
+        >
           {ctx.sel.size} / {ctx.apps.length} selected
         </span>
       </div>
 
-      {/* namespace groups --------------------------------------------- */}
+      {/* namespace groups -------------------------------------------- */}
       {Object.entries(grouped).map(([ns, list]) => {
         const picked = list.filter(a => ctx.sel.has(a.name)).length;
         return (
@@ -102,17 +109,19 @@ export default function Step2Apps({ step, setStep }) {
                   data-selected={ctx.sel.has(app.name)}
                   onClick={() => toggleApp(app.name)}
                 >
+                  {/* icon / fallback 📦 */}
                   {app.icon
                     ? <img src={app.icon} alt="" />
                     : <span className="fallback-ico">📦</span>}
+
                   <span className="app-name">{app.name}</span>
 
-                  {/* ℹ️ button – info modal */}
+                  {/* ℹ️ – open info modal */}
                   <button
                     className="info-btn"
                     title="Details"
-                    disabled={!app.readme && !app.desc}
-                    onClick={e => { e.stopPropagation(); setInspect(app); }}
+                    disabled={!app.desc && !app.readme}
+                    onClick={e => { e.stopPropagation(); setInfo(app); }}
                   >
                     ℹ️
                   </button>
@@ -123,7 +132,7 @@ export default function Step2Apps({ step, setStep }) {
         );
       })}
 
-      {/* nav buttons --------------------------------------------------- */}
+      {/* navigation --------------------------------------------------- */}
       <div style={{ marginTop: "1.6rem" }}>
         <button
           className="btn"
@@ -134,15 +143,8 @@ export default function Step2Apps({ step, setStep }) {
         </button>
       </div>
 
-      {/* details modal ------------------------------------------------- */}
-      {inspect && (
-        <AppDetails
-          project={inspect.namespace}
-          file={inspect.__file /* provided by backend */}
-          app={inspect}
-          onClose={() => setInspect(null)}
-        />
-      )}
+      {/* info modal --------------------------------------------------- */}
+      {info && <AppInfo app={info} onClose={() => setInfo(null)} />}
     </>
   );
 }
