@@ -1,180 +1,203 @@
-import React, { useEffect, useState, useRef } from "react";
-import Spinner from "../components/Spinner.jsx";
-import { useInitState } from "../state/initState.jsx";
+// src/frontend/src/steps/Step7Scripts.jsx
+import React, { useEffect, useState } from "react";
+import Spinner            from "../components/Spinner.jsx";
+import { useInitState }   from "../state/initState.jsx";
 
-/* ── helpers ──────────────────────────────────────────────────── */
-const wrapAnsible = (name, body) => `---
+/* ────────────────────────────────────────────────────────────
+   Tiny helpers – delimiter picker, one‑liner, playbook,
+   clipboard (with fallback) & “busy” copy button.
+──────────────────────────────────────────────────────────── */
+const rand     = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
+const pickDelim = (body, base = "EOF") => {
+  if (!body.includes(`\n${base}\n`)) return base;
+  while (true) {
+    const d = `${base}_${rand().slice(0,6).toUpperCase()}`;
+    if (!body.includes(`\n${d}\n`)) return d;
+  }
+};
+const oneLiner = (name, body) => {
+  const D = pickDelim(body);
+  return [`cat <<'${D}' > ${name}`, body.trimEnd(), D, `sudo -E bash ${name}`].join("\n");
+};
+const makePlaybook = (file, body) => {
+  const ind = body.split("\n").map(l => `          ${l}`).join("\n"); // 10‑sp indent
+  return `---
 - hosts: all
-  become: yes
+  become: true
   tasks:
-    - name: Run ${name}
-      shell: |
-${body
-  .split(/\r?\n/)
-  .map(l => `        ${l}`)
-  .join("\n")}`;
-
-/* smart fetch – returns text, throws on HTTP ≠ 2xx */
-async function fetchTxt(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.text();
+    - name: Upload ${file}
+      copy:
+        dest: /tmp/${file}
+        mode: "0755"
+        content: |
+${ind}
+    - name: Run ${file}
+      shell: /tmp/${file}
+      args:
+        chdir: /tmp
+`;
+};
+async function copy(txt){
+  try      { await navigator.clipboard.writeText(txt); }
+  catch(_) { const ta = Object.assign(document.createElement("textarea"),
+                        {value:txt,style:"position:fixed;opacity:0"} );
+             document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+}
+function CopyBtn({ getText, label="⧉", className="tiny-btn", onCopied }){
+  const [busy,setBusy] = useState(false);
+  return (
+    <button className={className} disabled={busy} onClick={async()=>{
+      setBusy(true);
+      try   { await copy(await getText()); onCopied?.(); }
+      finally{ setBusy(false); }
+    }}>
+      {busy ? <Spinner size={14}/> : label}
+    </button>
+  );
 }
 
-/* ── component ───────────────────────────────────────────────── */
-export default function Step7Scripts({ step, setStep }) {
-  const ctx                   = useInitState();
-  const [list, setList]       = useState([]);
-  const [busy, setBusy]       = useState(true);
-  const [cache, setCache]     = useState({});          // name → body
-  const [view,  setView]      = useState(null);        // { name, body } | null
-  const [err,   setErr]       = useState("");
+/* ─────────────────────────────────────────────────────────── */
+export default function Step7Scripts({ step, setStep }){
+  const ctx                 = useInitState();
+  const [list,setList]      = useState([]);
+  const [busy,setBusy]      = useState(true);
+  const [cache,setCache]    = useState({});              // name → body
 
-  /* initial list ------------------------------------------------ */
-  useEffect(() => {
-    (async () => {
-      try {
-        const arr = await fetch("/api/scripts").then(r => r.json());
-        setList(arr);
-      } catch (e) {
-        setErr(`Could not fetch scripts – ${e.message}`);
-      } finally {
-        setBusy(false);
-      }
+  /* fetch list once we land on this step -------------------- */
+  useEffect(()=>{
+    (async()=>{
+      setBusy(true);
+      const arr = await fetch("/api/scripts").then(r=>r.json());
+      setList(arr);
+      setBusy(false);
     })();
-  }, []);
+  },[]);
 
-  /* pull body (cache‑aware) ------------------------------------ */
-  async function getBody(name) {
+  /* helper – fetch file once & cache ------------------------ */
+  async function getBody(name){
     if (cache[name]) return cache[name];
-    const txt = await fetchTxt(`/scripts/${name}`);
-    setCache(o => ({ ...o, [name]: txt }));
+    const txt = await fetch(`/scripts/${name}`).then(r=>r.text());
+    setCache(o=>({ ...o, [name]:txt }));
     return txt;
   }
 
-  /* tiny actions ------------------------------------------------ */
-  async function copy(name, asAnsible = false) {
-    const body = await getBody(name);
-    await navigator.clipboard.writeText(
-      asAnsible ? wrapAnsible(name, body) : body,
-    );
-    ctx.toast("copied!");
-  }
-  async function download(name, asAnsible = false) {
-    const body = await getBody(name);
-    const blob = new Blob(
-      [asAnsible ? wrapAnsible(name, body) : body],
-      { type: "text/plain" },
-    );
-    const a = Object.assign(document.createElement("a"), {
-      href     : URL.createObjectURL(blob),
-      download : asAnsible ? `${name.replace(/\.sh$/, "")}.yml` : name,
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-  async function openView(name) {
-    const body = await getBody(name);
-    setView({ name, body });
+  /* create “one‑liner + secrets” ---------------------------- */
+  async function oneLinerSecrets(name){
+    const body           = await getBody(name);
+    const pw             = ctx.pwds   || {};
+    const keys           = ctx.keys   || {};
+    const oauth2Apps     = [...ctx.sel].filter(n=>n.startsWith("oauth2-"));
+    const needsS3        = [...ctx.sel].some(n=>["loki","thanos","tempo"].includes(n.toLowerCase()));
+
+    const lines = [
+      `export GIT_REPO_URL="${ctx.repo.trim()}"`,
+      `export RANCHER_TOKEN="${ctx.token}"`,
+      `export ARGOCD_PASS="${pw.argocd||""}"`,
+      `export KEYCLOAK_PASS="${pw.keycloak||""}"`,
+      `export RANCHER_PASS="${pw.rancher||""}"`,
+      `export GRAFANA_PASS="${pw.grafana||""}"`,
+      `export SSH_PRIVATE_KEY='${keys.privateKey?.replace(/\n/g,"\\n")||""}'`,
+      `export SELECTED_APPS="${[...ctx.sel].join(" ")}"`,
+    ];
+
+    /* install‑rancher flag */
+    if ([...ctx.sel].some(n=>n.toLowerCase().includes("rancher")))
+      lines.push(`export INSTALL_RANCHER="true"`);
+
+    /* OAuth2 env‑vars */
+    if (oauth2Apps.length){
+      lines.push(`export OAUTH2_APPS="${oauth2Apps.join(" ")}"`);
+      for (const app of oauth2Apps){
+        const env = app.toUpperCase().replace(/-/g,"_");
+        const sec = ctx.oauth2Secrets[app]||{};
+        lines.push(
+          `export ${env}_CLIENT_ID="${sec.clientId||""}"`,
+          `export ${env}_CLIENT_SECRET="${sec.clientSecret||""}"`,
+          `export ${env}_COOKIE_SECRET="${sec.cookieSecret||""}"`,
+          `export ${env}_REDIS_PASSWORD="${sec.redisPassword||""}"`
+        );
+      }
+    }
+
+    /* S‑3 creds */
+    if (needsS3){
+      lines.push(
+        `export S3_ACCESS_KEY_ID="${ctx.s3.id||""}"`,
+        `export S3_SECRET_ACCESS_KEY="${ctx.s3.key||""}"`,
+        `export S3_ENDPOINT="${ctx.s3.url||""}"`,
+        `export S3_BUCKET="${ctx.bucket||""}"`
+      );
+    }
+
+    lines.push("", oneLiner(name, body), "", "unset HISTFILE && history -c || true");
+    return lines.join("\n");
   }
 
-  /* view‑modal -------------------------------------------------- */
-  function ViewModal() {
-    const ref = useRef(null);
-    useEffect(() => {
-      if (!ref.current) return;
-      ref.current.focus();                // enable quick copy with ⌘‑A ⌘‑C
-    }, []);
-    return (
-      <div className="modal-overlay" onClick={() => setView(null)}>
-        <div
-          className="modal-dialog"
-          style={{ width: "80vw", maxWidth: 1000 }}
-          onClick={e => e.stopPropagation()}
-        >
-          <button className="modal-close" onClick={() => setView(null)}>
-            ×
-          </button>
-          <h2 style={{ marginTop: 0 }}>{view.name}</h2>
-          <pre
-            ref={ref}
-            tabIndex={0}
-            className="code-block"
-            style={{ maxHeight: "70vh", overflow: "auto" }}
-          >
-            {view.body}
-          </pre>
-          <div style={{ textAlign: "right", marginTop: "1rem" }}>
-            <button className="btn" onClick={() => copy(view.name)}>
-              Copy
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  /* render -------------------------------------------------- */
+  if (busy){
+    return <div style={{textAlign:"center",padding:"2rem"}}><Spinner size={38}/></div>;
   }
-
-  /* render ------------------------------------------------------ */
-  if (busy) {
-    return (
-      <div style={{ textAlign: "center", padding: "2rem" }}>
-        <Spinner size={40} />
-      </div>
-    );
-  }
-  if (err) return <p className="error">{err}</p>;
 
   return (
     <>
-      {view && <ViewModal />}
       <h2>Step 7 – Helper scripts</h2>
       <p className="intro">
-        Each script can be <strong>Viewed</strong>, <strong>Copied</strong> or{" "}
-        <strong>Downloaded</strong>. The *Ansible* buttons wrap the Bash script
-        in a minimal playbook so you can automate installs with{" "}
-        <code>ansible-playbook</code>.
+        Copy / download raw scripts, one‑liner installers or tiny Ansible playbooks.
       </p>
 
       <table className="scripts-table">
         <thead>
-          <tr>
-            <th style={{ width: "38%" }}>Script</th>
-            <th>Actions</th>
-          </tr>
+          <tr><th style={{width:"38%"}}>Script</th><th>Actions</th></tr>
         </thead>
         <tbody>
-          {list.map(name => (
+          {list.map(name=>(
             <tr key={name}>
-              <td>{name}</td>
-              <td>
-                <button className="tiny-btn" onClick={() => openView(name)}>
-                  View
-                </button>
-                <button className="tiny-btn" onClick={() => copy(name)}>
-                  Copy
-                </button>
-                <button className="tiny-btn" onClick={() => download(name)}>
-                  Download
-                </button>
-                <button className="tiny-btn" onClick={() => copy(name, true)}>
-                  Copy&nbsp;Ansible
-                </button>
-                <button className="tiny-btn" onClick={() => download(name, true)}>
-                  Download&nbsp;Ansible
-                </button>
+              <td><code>{name}</code></td>
+              <td style={{display:"flex",flexWrap:"wrap",gap:".45rem"}}>
+                {/* download raw */}
+                <a className="tiny-btn" href={`/scripts/${name}`} download>Download</a>
+
+                {/* copy raw */}
+                <CopyBtn label="⧉ File" getText={()=>getBody(name)} onCopied={()=>ctx.toast("copied file!")}/>
+
+                {/* copy one‑liner */}
+                <CopyBtn label="⧉ One‑liner"
+                         getText={async()=>oneLiner(name,await getBody(name))}
+                         onCopied={()=>ctx.toast("copied one‑liner!")}/>
+
+                {/* copy one‑liner + secrets */}
+                <CopyBtn label="⧉ One‑liner + secrets"
+                         getText={()=>oneLinerSecrets(name)}
+                         onCopied={()=>ctx.toast("copied one‑liner + secrets!")}/>
+
+                {/* download playbook */}
+                <CopyBtn label="Download Ansible" className="tiny-btn"
+                         getText={async()=>{
+                           const yaml = makePlaybook(name, await getBody(name));
+                           const blob = new Blob([yaml],{type:"text/yaml"});
+                           const url  = URL.createObjectURL(blob);
+                           Object.assign(document.createElement("a"),{
+                             href:url, download:`${name}.yml`
+                           }).click();
+                           URL.revokeObjectURL(url);
+                           return "";            // nothing to copy
+                         }}/>
+
+                {/* copy playbook */}
+                <CopyBtn label="⧉ Ansible"
+                         getText={async()=>makePlaybook(name,await getBody(name))}
+                         onCopied={()=>ctx.toast("copied playbook!")}/>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <button
-        className="btn"
-        style={{ marginTop: "1.6rem" }}
-        onClick={() => setStep(step + 1)}
-      >
-        Next →
-      </button>
+      {/* nav */}
+      <div style={{marginTop:"1.5rem"}}>
+        <button className="btn-secondary" onClick={()=>setStep(step-1)}>← Back</button>
+        <button className="btn" onClick={()=>setStep(step+1)}>Next →</button>
+      </div>
     </>
   );
 }
