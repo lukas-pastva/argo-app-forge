@@ -1,30 +1,50 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Spinner from "../components/Spinner.jsx";
 import { useInitState } from "../state/initState.jsx";
 
+/**
+ * Step 3 – tailors the GitOps repo, streams a ZIP, auto‑downloads it
+ * and then advances to the next wizard step without user interaction.
+ */
 export default function Step3Zip({ step, setStep }) {
-  const ctx = useInitState();
-  const [busy, setBusy]   = useState(false);
-  const [link, setLink]   = useState(null);
-  const [err,  setErr]    = useState("");
+  const ctx           = useInitState();
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr ] = useState("");
 
+  /* ------------------------------------------------------------------ */
   async function build() {
     setBusy(true);
     setErr("");
+
     try {
-      const res  = await fetch("/api/build", {
+      const res = await fetch("/api/build", {
         method : "POST",
         headers: { "Content-Type": "application/json" },
         body   : JSON.stringify({
-          selected: [...ctx.sel],
+          selected: [...ctx.sel],   // the apps chosen in Step 2
           repo   : ctx.repo,
           domain : ctx.domain,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      /* stream → blob → ObjectURL → hidden <a> click */
       const blob = await res.blob();
-      setLink(URL.createObjectURL(blob));
-      ctx.toast("ZIP ready!");
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+
+      a.href      = url;
+      a.download  = `${ctx.domain || "argo-init"}.zip`;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      /* revoke the ObjectURL a bit later */
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      ctx.toast("ZIP ready – downloading…");
+      setStep(step + 1);                 // jump to Step 4
     } catch (e) {
       console.error(e);
       setErr(e.message);
@@ -33,47 +53,20 @@ export default function Step3Zip({ step, setStep }) {
     }
   }
 
+  /* kick off the build once – when the component mounts */
+  useEffect(() => { build(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  /* ------------------------------------------------------------------ */
   return (
     <>
-      <h2>Step 3 – Build ZIP & push</h2>
+      <h2>Step 3 – Build ZIP & push</h2>
       <p className="intro">
-        Click *Build ZIP* to tailor the repository to your selection. Download
-        it, then push the contents to the Git repo you entered in Step 1.
+        Sit tight – we’re tailoring the repo, downloading the ZIP and will
+        advance automatically when it’s done.
       </p>
 
-      {busy ? (
-        <Spinner size={48} />
-      ) : link ? (
-        <>
-          <a
-            className="btn"
-            href={link}
-            download={`${ctx.domain || "argo-init"}.zip`}
-            onClick={() => setLink(null)}
-          >
-            ⬇ Download ZIP
-          </a>
-          <p style={{ marginTop: "1.4rem", fontSize: ".9rem" }}>
-            After downloading, unpack the archive, inspect the files if you
-            wish, <strong>git&nbsp;add&nbsp;· git&nbsp;commit&nbsp;· git&nbsp;push</strong>{" "}
-            the result to <code>{ctx.repo}</code>.
-          </p>
-          <button
-            className="btn-secondary"
-            style={{ marginTop: "2rem" }}
-            onClick={() => setStep(step + 1)}
-          >
-            Next →
-          </button>
-        </>
-      ) : (
-        <>
-          <button className="btn" onClick={build}>
-            Build ZIP
-          </button>
-          {err && <p className="error" style={{ marginTop: ".9rem" }}>{err}</p>}
-        </>
-      )}
+      {busy && <Spinner size={48} />}
+      {err  && <p className="error" style={{ marginTop: "1rem" }}>{err}</p>}
     </>
   );
 }
