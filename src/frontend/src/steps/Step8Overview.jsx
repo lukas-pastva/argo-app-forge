@@ -1,5 +1,5 @@
 import React from "react";
-import { useInitState, stepsMeta } from "../state/initState.js";
+import { useInitState, stepsMeta } from "../state/initState.jsx";
 
 export default function Step8Overview() {
   const ctx = useInitState();

@@ -1,5 +1,5 @@
 import React from "react";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 
 export default function Step6SSH({ step, setStep }) {
   const ctx = useInitState();

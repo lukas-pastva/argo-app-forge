@@ -1,6 +1,6 @@
 import React from "react";
 import { DOMAIN_RE, REPO_RE } from "../utils/regex.js";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 export default function Step1Details({ setStep }) {
   const ctx = useInitState();
   const domainOK = DOMAIN_RE.test(ctx.domain.trim());

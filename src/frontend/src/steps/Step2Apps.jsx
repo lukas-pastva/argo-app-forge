@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Spinner from "../components/Spinner.jsx";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 
 /* helper – groups flat [{name,namespace,…}] into ns → [apps] -------- */
 function byNs(list = []) {

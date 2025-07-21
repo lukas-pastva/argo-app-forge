@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 import { genPass, genCookie } from "../utils/random.js";
 
 export default function Step4Secrets({ step, setStep }) {

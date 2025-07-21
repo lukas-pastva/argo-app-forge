@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import Spinner from "../components/Spinner.jsx";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 
 export default function Step3Zip({ step, setStep }) {
   const ctx = useInitState();

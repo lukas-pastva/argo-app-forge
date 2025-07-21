@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Spinner from "../components/Spinner.jsx";
-import { useInitState } from "../state/initState.js";
+import { useInitState } from "../state/initState.jsx";
 
 /* tiny helper that wraps a Bash script inside an Ansible playbook */
 const wrapAnsible = (name, body) => `---

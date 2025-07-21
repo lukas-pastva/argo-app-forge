@@ -1,5 +1,5 @@
 import React from "react";
-import { stepsMeta } from "../state/initState.js";
+import { stepsMeta } from "../state/initState.jsx";
 export default function Step0Welcome({ setStep }) {
   return (
     <>
