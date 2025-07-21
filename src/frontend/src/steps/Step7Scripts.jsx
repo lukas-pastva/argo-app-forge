@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Spinner from "../components/Spinner.jsx";
 import { useInitState } from "../state/initState.jsx";
 
-/* tiny helper that wraps a Bash script inside an Ansible playbook */
+/* ── helpers ──────────────────────────────────────────────────── */
 const wrapAnsible = (name, body) => `---
 - hosts: all
   become: yes
@@ -12,52 +12,109 @@ const wrapAnsible = (name, body) => `---
 ${body
   .split(/\r?\n/)
   .map(l => `        ${l}`)
-  .join("\n")}
-`;
+  .join("\n")}`;
 
+/* smart fetch – returns text, throws on HTTP ≠ 2xx */
+async function fetchTxt(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.text();
+}
+
+/* ── component ───────────────────────────────────────────────── */
 export default function Step7Scripts({ step, setStep }) {
-  const ctx = useInitState();
-  const [list, setList] = useState([]);
-  const [busy, setBusy] = useState(true);
-  const [cache, setCache] = useState({}); // name → script text
+  const ctx                   = useInitState();
+  const [list, setList]       = useState([]);
+  const [busy, setBusy]       = useState(true);
+  const [cache, setCache]     = useState({});          // name → body
+  const [view,  setView]      = useState(null);        // { name, body } | null
+  const [err,   setErr]       = useState("");
 
+  /* initial list ------------------------------------------------ */
   useEffect(() => {
     (async () => {
-      setBusy(true);
-      const arr = await fetch("/api/scripts").then(r => r.json());
-      setList(arr);
-      setBusy(false);
+      try {
+        const arr = await fetch("/api/scripts").then(r => r.json());
+        setList(arr);
+      } catch (e) {
+        setErr(`Could not fetch scripts – ${e.message}`);
+      } finally {
+        setBusy(false);
+      }
     })();
   }, []);
 
-  /* helpers --------------------------------------------------------- */
-  async function getScript(name) {
+  /* pull body (cache‑aware) ------------------------------------ */
+  async function getBody(name) {
     if (cache[name]) return cache[name];
-    const txt = await fetch(`/scripts/${name}`).then(r => r.text());
+    const txt = await fetchTxt(`/scripts/${name}`);
     setCache(o => ({ ...o, [name]: txt }));
     return txt;
   }
 
+  /* tiny actions ------------------------------------------------ */
   async function copy(name, asAnsible = false) {
-    const txt = await getScript(name);
-    await navigator.clipboard.writeText(asAnsible ? wrapAnsible(name, txt) : txt);
+    const body = await getBody(name);
+    await navigator.clipboard.writeText(
+      asAnsible ? wrapAnsible(name, body) : body,
+    );
     ctx.toast("copied!");
   }
-
   async function download(name, asAnsible = false) {
-    const txt = await getScript(name);
-    const blob = new Blob([asAnsible ? wrapAnsible(name, txt) : txt], {
-      type: "text/plain",
+    const body = await getBody(name);
+    const blob = new Blob(
+      [asAnsible ? wrapAnsible(name, body) : body],
+      { type: "text/plain" },
+    );
+    const a = Object.assign(document.createElement("a"), {
+      href     : URL.createObjectURL(blob),
+      download : asAnsible ? `${name.replace(/\.sh$/, "")}.yml` : name,
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = asAnsible ? `${name.replace(/\.sh$/,"")}.yml` : name;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(a.href);
+  }
+  async function openView(name) {
+    const body = await getBody(name);
+    setView({ name, body });
   }
 
-  /* ----------------------------------------------------------------- */
+  /* view‑modal -------------------------------------------------- */
+  function ViewModal() {
+    const ref = useRef(null);
+    useEffect(() => {
+      if (!ref.current) return;
+      ref.current.focus();                // enable quick copy with ⌘‑A ⌘‑C
+    }, []);
+    return (
+      <div className="modal-overlay" onClick={() => setView(null)}>
+        <div
+          className="modal-dialog"
+          style={{ width: "80vw", maxWidth: 1000 }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button className="modal-close" onClick={() => setView(null)}>
+            ×
+          </button>
+          <h2 style={{ marginTop: 0 }}>{view.name}</h2>
+          <pre
+            ref={ref}
+            tabIndex={0}
+            className="code-block"
+            style={{ maxHeight: "70vh", overflow: "auto" }}
+          >
+            {view.body}
+          </pre>
+          <div style={{ textAlign: "right", marginTop: "1rem" }}>
+            <button className="btn" onClick={() => copy(view.name)}>
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* render ------------------------------------------------------ */
   if (busy) {
     return (
       <div style={{ textAlign: "center", padding: "2rem" }}>
@@ -65,21 +122,23 @@ export default function Step7Scripts({ step, setStep }) {
       </div>
     );
   }
+  if (err) return <p className="error">{err}</p>;
 
   return (
     <>
+      {view && <ViewModal />}
       <h2>Step 7 – Helper scripts</h2>
       <p className="intro">
-        Each script can be <strong>Copied</strong> to your clipboard or{" "}
-        <strong>Downloaded</strong> to a file. The extra *Ansible* buttons wrap
-        the same Bash script inside a minimal playbook so you can automate the
-        install via <code>ansible-playbook</code>.
+        Each script can be <strong>Viewed</strong>, <strong>Copied</strong> or{" "}
+        <strong>Downloaded</strong>. The *Ansible* buttons wrap the Bash script
+        in a minimal playbook so you can automate installs with{" "}
+        <code>ansible-playbook</code>.
       </p>
 
       <table className="scripts-table">
         <thead>
           <tr>
-            <th style={{ width: "40%" }}>Script</th>
+            <th style={{ width: "38%" }}>Script</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -88,6 +147,9 @@ export default function Step7Scripts({ step, setStep }) {
             <tr key={name}>
               <td>{name}</td>
               <td>
+                <button className="tiny-btn" onClick={() => openView(name)}>
+                  View
+                </button>
                 <button className="tiny-btn" onClick={() => copy(name)}>
                   Copy
                 </button>
@@ -95,10 +157,10 @@ export default function Step7Scripts({ step, setStep }) {
                   Download
                 </button>
                 <button className="tiny-btn" onClick={() => copy(name, true)}>
-                  Copy Ansible
+                  Copy&nbsp;Ansible
                 </button>
                 <button className="tiny-btn" onClick={() => download(name, true)}>
-                  Download Ansible
+                  Download&nbsp;Ansible
                 </button>
               </td>
             </tr>
@@ -106,7 +168,11 @@ export default function Step7Scripts({ step, setStep }) {
         </tbody>
       </table>
 
-      <button className="btn" style={{ marginTop: "1.6rem" }} onClick={() => setStep(step + 1)}>
+      <button
+        className="btn"
+        style={{ marginTop: "1.6rem" }}
+        onClick={() => setStep(step + 1)}
+      >
         Next →
       </button>
     </>
