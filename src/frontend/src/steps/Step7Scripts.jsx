@@ -1,4 +1,16 @@
 // src/frontend/src/steps/Step7Scripts.jsx
+//
+// ✨ Bug‑fix 2025‑07‑22
+// ───────────────────
+// • oneLiner() now runs the generated script *and* history‑wipe on the
+//   **same shell line**, so nothing is left waiting on STDIN while the
+//   script prompts the user.
+// • oneLinerSecrets() no longer appends an extra “unset HISTFILE …” —
+//   the cleanup is already part of oneLiner().
+//   ↳ This prevents the stray
+//       unset HISTFILE && history ‑c || true10.0.0.3:9345"
+//     from leaking into */etc/rancher/rke2/config.yaml*.
+//
 import React, { useEffect, useState } from "react";
 import Spinner            from "../components/Spinner.jsx";
 import { useInitState }   from "../state/initState.jsx";
@@ -15,9 +27,16 @@ const pickDelim = (body, base = "EOF") => {
     if (!body.includes(`\n${d}\n`)) return d;
   }
 };
+/*  BUG‑FIX: script call + history wipe are now on ONE line  */
 const oneLiner = (name, body) => {
   const D = pickDelim(body);
-  return [`cat <<'${D}' > ${name}`, body.trimEnd(), D, `sudo -E bash ${name}`].join("\n");
+  return [
+    `cat <<'${D}' > ${name}`,
+    body.trimEnd(),
+    `${D}`,
+    /* nothing is printed *after* the script starts reading stdin */
+    `sudo -E bash ${name} && unset HISTFILE && history -c || true`,
+  ].join("\n");
 };
 const makePlaybook = (file, body) => {
   const ind = body
@@ -113,9 +132,7 @@ export default function Step7Scripts({ step, setStep }) {
       const lines = [
         `export RANCHER_TOKEN="${ctx.token}"`,
         "",
-        oneLiner(name, body),
-        "",
-        "unset HISTFILE && history -c || true",
+        oneLiner(name, body),            // cleanup already inside
       ];
       return lines.join("\n");
     }
@@ -170,9 +187,7 @@ export default function Step7Scripts({ step, setStep }) {
 
     lines.push(
       "",
-      oneLiner(name, body),
-      "",
-      "unset HISTFILE && history -c || true",
+      oneLiner(name, body),              // cleanup already inside
     );
     return lines.join("\n");
   }
