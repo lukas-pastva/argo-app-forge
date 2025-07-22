@@ -1,4 +1,4 @@
-# AppForge 🚀
+# Argo Init 🚀
 
 *A tiny Git‑based **App‑of‑Apps curator** that lets newcomers pick only the
 Helm Applications they really need, performs **multi‑token replacement**
