@@ -1,88 +1,125 @@
-// src/frontend/src/steps/Step8Overview.jsx
 import React from "react";
 import { useInitState, stepsMeta } from "../state/initState.jsx";
-import CopyBtn from "../components/CopyBtn.jsx";   // ← if CopyBtn lives elsewhere, adjust import
 
-/* helper – mask sensitive values in the UI, but keep them copyable */
-const masked = (val) => (val ? "••••••" : "—");
+/* simple copy‑to‑clipboard button ---------------------------------------- */
+function CopyBtn({ text, className = "tiny-btn", onCopied }) {
+  return (
+    <button
+      className={className}
+      onClick={() => {
+        navigator.clipboard.writeText(text || "");
+        onCopied?.();
+      }}
+    >
+      ⧉
+    </button>
+  );
+}
 
 export default function Step8Overview() {
   const ctx = useInitState();
-  const { domain, repo, pwds = {}, keys = {}, s3 = {}, bucket = "" } = ctx;
 
-  /* OAuth2 section -------------------------------------------------- */
-  const oauth2Rows = Object.entries(ctx.oauth2Secrets || {}).flatMap(
-    ([app, sec]) => {
-      const cap = (s) => s.replace(/^./, (c) => c.toUpperCase());
-      return [
-        { label: `${app} – Client ID`,        val: sec.clientId,        hide: false },
-        { label: `${app} – Client secret`,    val: sec.clientSecret,    hide: true  },
-        { label: `${app} – Cookie secret`,    val: sec.cookieSecret,    hide: true  },
-        { label: `${app} – Redis password`,   val: sec.redisPassword,   hide: false },
-      ];
-    },
+  /* which apps need S‑3 creds? */
+  const s3Required = [...ctx.sel].some((n) =>
+    ["loki", "thanos", "tempo"].includes(n.toLowerCase())
   );
 
-  /* S‑3 rows (only when relevant) ----------------------------------- */
-  const s3Rows = ["loki", "thanos", "tempo"].some((n) =>
-    [...ctx.sel].includes(n),
-  )
-    ? [
-        { label: "S3_ACCESS_KEY_ID",      val: s3.id,  hide: false },
-        { label: "S3_SECRET_ACCESS_KEY",  val: s3.key, hide: true  },
-        { label: "S3_ENDPOINT",           val: s3.url, hide: false },
-        { label: "S3_BUCKET",             val: bucket, hide: false },
-      ]
-    : [];
+  /* handy helper – mask secret values unless copied */
+  const maskIfSecret = (label, value, hide) =>
+    hide || /secret|password|key/i.test(label) ? "••••••" : value;
 
-  /* main rows ------------------------------------------------------- */
+  /* build rows once */
   const rows = [
-    { label: "Main domain",      val: domain },
-    { label: "Git repo",         val: repo   },
-    ...["argocd", "keycloak", "rancher", "grafana"].map((k) => ({
-      label: `${k.charAt(0).toUpperCase() + k.slice(1)} password`,
-      val: pwds[k],
-      hide: true,
-    })),
-    { label: "SSH public key",   val: keys.publicKey },
-    { label: "SSH private key",  val: keys.privateKey, hide: true },
-    ...oauth2Rows,
-    ...s3Rows,
+    { label: "Domain", val: ctx.domain },
+    { label: "Git repo", val: ctx.repo },
   ];
 
-  /* render ---------------------------------------------------------- */
+  /* admin passwords ------------------------------------------------------ */
+  ["argocd", "keycloak", "rancher", "grafana"].forEach((k) => {
+    rows.push({
+      label: `${k.charAt(0).toUpperCase() + k.slice(1)} password`,
+      val: ctx.pwds?.[k] || "—",
+      hide: true,
+    });
+  });
+
+  /* SSH key pair --------------------------------------------------------- */
+  if (ctx.keys) {
+    rows.push(
+      {
+        label: "SSH public key",
+        val: ctx.keys.publicKey
+          .split("\n")
+          .slice(0, 2)
+          .join("\n") + "\n…",
+        copy: ctx.keys.publicKey,
+      },
+      {
+        label: "SSH private key",
+        val: ctx.keys.privateKey
+          .split("\n")
+          .slice(0, 2)
+          .join("\n") + "\n…",
+        copy: ctx.keys.privateKey,
+        hide: true,
+      }
+    );
+  }
+
+  /* OAuth2 application secrets ------------------------------------------ */
+  const oauth2Apps = [...ctx.sel].filter((n) => n.toLowerCase().startsWith("oauth2-"));
+  oauth2Apps.forEach((name) => {
+    const s = ctx.oauth2Secrets?.[name] || {};
+    rows.push(
+      { label: `${name} – Client ID`, val: s.clientId || "—" },
+      { label: `${name} – Client secret`, val: s.clientSecret || "—", hide: true },
+      { label: `${name} – Cookie secret`, val: s.cookieSecret || "—", hide: true },
+      { label: `${name} – Redis password`, val: s.redisPassword || "—", hide: true }
+    );
+  });
+
+  /* S‑3 credentials ------------------------------------------------------ */
+  if (s3Required) {
+    rows.push(
+      { label: "S3_ACCESS_KEY_ID", val: ctx.s3.id },
+      { label: "S3_SECRET_ACCESS_KEY", val: ctx.s3.key, hide: true },
+      { label: "S3_ENDPOINT", val: ctx.s3.url },
+      { label: "S3_BUCKET", val: ctx.bucket }
+    );
+  }
+
+  /* copy helper */
+  const copy = (txt) => navigator.clipboard.writeText(txt);
+
+  /* render --------------------------------------------------------------- */
   return (
     <>
       <h2>Step 8 – Everything at a glance</h2>
-      <p className="intro">{stepsMeta[8].desc}</p>
+      <p className="intro">Quick reference for all data generated in this session.</p>
 
       <table className="summary-table">
         <tbody>
-          {rows.map(({ label, val, hide = false }) => (
-            <tr key={label}>
+          {rows.map(({ label, val, copy: cp, hide }, i) => (
+            <tr key={i}>
               <th>{label}</th>
-              <td>{hide ? masked(val) : val || "—"}</td>
+              <td>{maskIfSecret(label, val, hide)}</td>
               <td>
-                {val && (
+                {cp || val ? (
                   <CopyBtn
-                    text={val}
-                    className="tiny-btn"
-                    onCopied={() => ctx.toast("Copied!")}
+                    text={cp ?? val}
+                    onCopied={() => ctx.toast("copied!")}
                   />
-                )}
+                ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <button
-        className="btn"
-        style={{ marginTop: "1.2rem" }}
-        onClick={() => ctx.setStep?.(0) ?? window.location.reload()}
-      >
-        Start again
-      </button>
+      <p style={{ marginTop: "2rem", fontSize: ".9rem", color: "var(--text-light)" }}>
+        You can revisit any step via the pill‑navigator above to regenerate or
+        change individual pieces. Happy hacking!
+      </p>
     </>
   );
 }
