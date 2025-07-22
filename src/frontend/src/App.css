@@ -516,3 +516,31 @@ h2{margin:0 0 1.2rem;}            /* extra breathing room under every H2 */
   transition:transform .2s;
 }
 .theme-toggle:hover{transform:scale(1.15);}
+
+/* ────────────────────────────────────────────────────────────────
+   Dark‑mode contrast fixes (password hovers, tables, etc.)
+   ────────────────────────────────────────────────────────────── */
+[data-theme='dark'] .btn-copy,
+[data-theme='dark'] .tiny-btn,
+[data-theme='dark'] .key-copy{
+  background:#2f343a;                 /* default background in dark mode */
+}
+
+[data-theme='dark'] .btn-copy:hover,
+[data-theme='dark'] .tiny-btn:hover,
+[data-theme='dark'] .key-copy:hover,
+[data-theme='dark'] .key-wrap .key-copy:hover,
+[data-theme='dark'] .key-wrap .btn-copy:hover{
+  background:#3b4047;                 /* darker hover for contrast */
+}
+
+[data-theme='dark'] .scripts-table tr:hover,
+[data-theme='dark'] .summary-table tr:hover{
+  background:#242a30;                 /* match dark card tone */
+}
+
+[data-theme='dark'] .app-more pre{
+  background:#252b33;                 /* align with key‑block dark bg */
+}
+
+/* end of file */
